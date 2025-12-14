@@ -61,9 +61,16 @@ export const Input: React.FC<InputProps> = ({ label, error, className = '', ...p
 );
 
 // --- Card ---
-// Updated for Glassmorphism
-export const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-  <div className={`bg-white/70 backdrop-blur-xl border border-white/50 shadow-xl shadow-gray-200/40 rounded-2xl ${className}`}>
+// Updated for Glassmorphism with full div props support
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  children: React.ReactNode;
+}
+
+export const Card: React.FC<CardProps> = ({ children, className = '', ...props }) => (
+  <div
+    className={`bg-white/70 backdrop-blur-xl border border-white/50 shadow-xl shadow-gray-200/40 rounded-2xl ${className}`}
+    {...props}
+  >
     {children}
   </div>
 );

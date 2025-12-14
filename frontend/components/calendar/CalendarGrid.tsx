@@ -11,48 +11,23 @@ import { formatTime, getSlotStatusColor, isSlotInPast } from '../../services/cal
 
 // Constants for grid layout
 const HOUR_HEIGHT = 60; // pixels per hour
-const START_HOUR = 6; // 6 AM
-const END_HOUR = 22; // 10 PM
-const TOTAL_HOURS = END_HOUR - START_HOUR;
+const DEFAULT_START_HOUR = 0; // 12 AM (midnight)
+const DEFAULT_END_HOUR = 24; // 12 AM next day (full 24-hour view)
 
-// Allowed slot durations in minutes (session patterns: 25+5, 50+10, 80+10, etc.)
-// These represent typical tutoring session lengths
-const ALLOWED_DURATIONS = [
-  25,   // Short session
-  30,   // Short session + break
-  50,   // Standard session
-  60,   // Standard session + break (1 hour)
-  80,   // Long session
-  90,   // Long session + break (1.5 hours)
-  110,  // Extended session
-  120,  // Extended session + break (2 hours)
-  150,  // Double session (2.5 hours)
-  180,  // Double session + break (3 hours)
-  240,  // Half day (4 hours)
-];
+// Duration snapping configuration
+const DURATION_INCREMENT = 30; // Snap to 30-minute increments
+const MIN_DURATION = 30; // Minimum 30 minutes
 
-// Snap a duration to the nearest allowed value
+// Snap duration to nearest 30-minute increment (30, 60, 90, 120, ...)
+// No upper limit - availability can be any multiple of 30 minutes
 const snapToAllowedDuration = (durationMins: number): number => {
-  if (durationMins <= ALLOWED_DURATIONS[0]) {
-    return ALLOWED_DURATIONS[0];
-  }
-  if (durationMins >= ALLOWED_DURATIONS[ALLOWED_DURATIONS.length - 1]) {
-    return ALLOWED_DURATIONS[ALLOWED_DURATIONS.length - 1];
+  // Enforce minimum duration
+  if (durationMins < MIN_DURATION) {
+    return MIN_DURATION;
   }
 
-  // Find the closest allowed duration
-  let closest = ALLOWED_DURATIONS[0];
-  let minDiff = Math.abs(durationMins - closest);
-
-  for (const allowed of ALLOWED_DURATIONS) {
-    const diff = Math.abs(durationMins - allowed);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closest = allowed;
-    }
-  }
-
-  return closest;
+  // Round to nearest 30-minute increment
+  return Math.round(durationMins / DURATION_INCREMENT) * DURATION_INCREMENT;
 };
 
 interface CalendarGridProps {
@@ -141,17 +116,16 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
   });
 
   // Form state
-  const [slotDuration, setSlotDuration] = useState(50);
-  const [breakDuration, setBreakDuration] = useState(10);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const gridRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const resizeRef = useRef<ResizeState>(resize);
 
-  // Generate time slots from 6 AM to 10 PM
-  const timeSlots = Array.from({ length: TOTAL_HOURS }, (_, i) => {
-    const hour = i + START_HOUR;
+  // Generate time slots for the full day (12 AM to 12 AM)
+  const totalHours = DEFAULT_END_HOUR - DEFAULT_START_HOUR;
+  const timeSlots = Array.from({ length: totalHours }, (_, i) => {
+    const hour = i + DEFAULT_START_HOUR;
     return `${hour.toString().padStart(2, '0')}:00`;
   });
 
@@ -165,7 +139,7 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
   // Calculate slot position (top) based on start time
   const getSlotTop = (slot: CalendarSlot): number => {
     const { hours, mins } = parseTimeFromISO(slot.start_at);
-    const minutesFromStart = (hours - START_HOUR) * 60 + mins;
+    const minutesFromStart = (hours - DEFAULT_START_HOUR) * 60 + mins;
     return (minutesFromStart / 60) * HOUR_HEIGHT;
   };
 
@@ -210,20 +184,20 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
       // When resizing from top, end stays fixed, start moves
       newStartMins = originalEndMins - snappedDuration;
       // Clamp to grid bounds
-      if (newStartMins < START_HOUR * 60) {
-        newStartMins = START_HOUR * 60;
+      if (newStartMins < DEFAULT_START_HOUR * 60) {
+        newStartMins = DEFAULT_START_HOUR * 60;
         // Recalculate duration if clamped
       }
     } else if (resize.edge === 'bottom') {
       // When resizing from bottom, start stays fixed, end moves
       newEndMins = originalStartMins + snappedDuration;
       // Clamp to grid bounds
-      if (newEndMins > END_HOUR * 60) {
-        newEndMins = END_HOUR * 60;
+      if (newEndMins > DEFAULT_END_HOUR * 60) {
+        newEndMins = DEFAULT_END_HOUR * 60;
       }
     }
 
-    const newTop = ((newStartMins - START_HOUR * 60) / 60) * HOUR_HEIGHT;
+    const newTop = ((newStartMins - DEFAULT_START_HOUR * 60) / 60) * HOUR_HEIGHT;
     const newHeight = (snappedDuration / 60) * HOUR_HEIGHT;
 
     const formatTimePreview = (totalMins: number): string => {
@@ -236,7 +210,7 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
 
     return {
       top: Math.max(0, newTop),
-      height: Math.max(ALLOWED_DURATIONS[0] / 60 * HOUR_HEIGHT, newHeight),
+      height: Math.max(MIN_DURATION / 60 * HOUR_HEIGHT, newHeight),
       display: `${formatTimePreview(newStartMins)} - ${formatTimePreview(newEndMins)}`,
       snappedDuration,
       originalDuration,
@@ -545,12 +519,17 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
 
     setIsSubmitting(true);
     try {
+      // Calculate the actual duration of the availability in minutes
+      // For one-time availability created by dragging, the slot duration equals the total duration
+      // This makes the entire dragged block one bookable slot
+      const totalDurationMinutes = (popover.endHour - popover.startHour) * 60;
+
       await onAddAvailability({
         specific_date: popover.date,
         start_time: `${popover.startHour.toString().padStart(2, '0')}:00`,
         end_time: `${popover.endHour.toString().padStart(2, '0')}:00`,
-        slot_duration_minutes: slotDuration,
-        break_minutes: breakDuration,
+        slot_duration_minutes: totalDurationMinutes,
+        break_minutes: 0, // No breaks needed for single-slot availability
       });
       setPopover((prev) => ({ ...prev, isOpen: false }));
     } catch (error) {
@@ -664,7 +643,7 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
           }
         }}
       >
-        <div className="grid grid-cols-8" style={{ height: `${TOTAL_HOURS * HOUR_HEIGHT}px` }}>
+        <div className="grid grid-cols-8" style={{ height: `${totalHours * HOUR_HEIGHT}px` }}>
           {/* Time labels column */}
           <div className="bg-gray-50 relative">
             {timeSlots.map((timeSlot, idx) => (
@@ -846,32 +825,12 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
                 </div>
               </div>
 
-              <div className="space-y-3 mb-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Session Duration</label>
-                  <select
-                    value={slotDuration}
-                    onChange={(e) => setSlotDuration(parseInt(e.target.value))}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value={25}>25 minutes</option>
-                    <option value={50}>50 minutes</option>
-                    <option value={80}>80 minutes</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Break Between Sessions</label>
-                  <select
-                    value={breakDuration}
-                    onChange={(e) => setBreakDuration(parseInt(e.target.value))}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value={0}>No break</option>
-                    <option value={5}>5 minutes</option>
-                    <option value={10}>10 minutes</option>
-                    <option value={15}>15 minutes</option>
-                  </select>
-                </div>
+              {/* Info about slot duration - shows the total availability duration */}
+              <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm text-gray-600">
+                <p>This will create a single {(popover.endHour - popover.startHour)}-hour availability slot.</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Use the "Add Availability" button for recurring schedules with multiple session slots.
+                </p>
               </div>
 
               <div className="flex gap-2">

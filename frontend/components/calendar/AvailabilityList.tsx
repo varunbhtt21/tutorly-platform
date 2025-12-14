@@ -8,6 +8,32 @@ import { Clock, Trash2, Calendar, RefreshCw } from 'lucide-react';
 import type { Availability } from '../../types/api';
 import { getDayName, formatTime, formatDate } from '../../services/calendarAPI';
 
+/**
+ * Format duration in minutes to human-readable string
+ * e.g., 300 -> "5 hours", 90 -> "1.5 hours", 50 -> "50min"
+ */
+const formatDuration = (minutes: number): string => {
+  if (minutes < 60) {
+    return `${minutes}min`;
+  }
+  const hours = minutes / 60;
+  if (hours === Math.floor(hours)) {
+    return `${hours} hour${hours > 1 ? 's' : ''}`;
+  }
+  return `${hours.toFixed(1)} hours`;
+};
+
+/**
+ * Calculate duration in minutes from start and end time strings (HH:MM format)
+ * This is the source of truth for one-time availability duration,
+ * as it reflects actual time range even after resizing.
+ */
+const calculateDurationFromTimeRange = (startTime: string, endTime: string): number => {
+  const [startHour, startMin] = startTime.split(':').map(Number);
+  const [endHour, endMin] = endTime.split(':').map(Number);
+  return (endHour * 60 + endMin) - (startHour * 60 + startMin);
+};
+
 interface AvailabilityListProps {
   availabilities: Availability[];
   onDelete: (id: number) => Promise<void>;
@@ -147,7 +173,7 @@ export const AvailabilityList: React.FC<AvailabilityListProps> = ({
                     <div className="text-xs text-gray-500">
                       {formatTime(avail.start_time)} - {formatTime(avail.end_time)}
                       <span className="mx-1.5">•</span>
-                      {avail.slot_duration_minutes}min slots
+                      {formatDuration(calculateDurationFromTimeRange(avail.start_time, avail.end_time))}
                     </div>
                   </div>
                 </div>

@@ -198,7 +198,8 @@ const CalendarPage: React.FC = () => {
   const handleDeleteSlot = async (slotId: number) => {
     try {
       await calendarAPI.deleteSlot(slotId);
-      await fetchCalendarView();
+      // Refresh both calendar view and availability list (backend deletes availability rule if this was the last slot)
+      await Promise.all([fetchCalendarView(), fetchAvailability()]);
     } catch (err) {
       const formatted = formatAPIError(err);
       setError(formatted.message);

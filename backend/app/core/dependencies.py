@@ -336,9 +336,10 @@ def get_get_calendar_view_use_case(
 
 def get_delete_availability_use_case(
     availability_repo: IAvailabilityRepository = Depends(get_availability_repository),
+    booking_slot_repo: IBookingSlotRepository = Depends(get_booking_slot_repository),
 ) -> DeleteAvailabilityUseCase:
-    """Get DeleteAvailability use case."""
-    return DeleteAvailabilityUseCase(availability_repo)
+    """Get DeleteAvailability use case with booking slot cleanup."""
+    return DeleteAvailabilityUseCase(availability_repo, booking_slot_repo)
 
 
 def get_update_availability_use_case(
@@ -372,9 +373,10 @@ def get_update_slot_use_case(
 
 def get_delete_slot_use_case(
     booking_slot_repo: IBookingSlotRepository = Depends(get_booking_slot_repository),
+    availability_repo: IAvailabilityRepository = Depends(get_availability_repository),
 ) -> DeleteSlotUseCase:
-    """Get DeleteSlot use case."""
-    return DeleteSlotUseCase(booking_slot_repo)
+    """Get DeleteSlot use case with availability cleanup."""
+    return DeleteSlotUseCase(booking_slot_repo, availability_repo)
 
 
 # ============================================================================

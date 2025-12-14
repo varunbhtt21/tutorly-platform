@@ -8,7 +8,7 @@
  * - Persistent authentication
  */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { authAPI, TokenManager, formatAPIError } from '../services';
@@ -51,54 +51,43 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const queryClient = useQueryClient();
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [isRefreshingSession, setIsRefreshingSession] = useState(false);
 
   // ==========================================================================
-  // Fetch current user (only if authenticated)
+  // Fetch current user - React Query as single source of truth
   // ==========================================================================
-
+  //
+  // Architecture: React Query handles ALL auth state management
+  // - If tokens exist, fetch user data
+  // - If token is expired, axios interceptor will refresh it automatically
+  // - If refresh fails, interceptor rejects and we clear tokens
+  // - No separate initialization logic needed - React Query IS the initialization
+  //
   const {
     data: user = null,
     isLoading,
     refetch,
   } = useQuery({
     queryKey: ['currentUser'],
-    queryFn: authAPI.getCurrentUser,
-    enabled: TokenManager.isAuthenticated() && isInitialized && !isRefreshingSession,
-    retry: false, // Don't retry on failure
-    staleTime: Infinity, // User data rarely changes
-  });
-
-  // ==========================================================================
-  // Initialize auth state on mount - Try to restore session
-  // ==========================================================================
-
-  useEffect(() => {
-    const initializeAuth = async () => {
-      // Check if we have a refresh token (from "Keep me signed in")
-      const refreshToken = TokenManager.getRefreshToken();
-
-      if (refreshToken) {
-        // Try to refresh the session silently
-        setIsRefreshingSession(true);
-        try {
-          await authAPI.refreshToken({ refresh_token: refreshToken });
-          console.log('[Auth] Session restored successfully');
-        } catch (error) {
-          // Refresh failed - tokens are invalid/expired
-          console.log('[Auth] Session restoration failed, clearing tokens');
-          TokenManager.clearTokens();
-        } finally {
-          setIsRefreshingSession(false);
-        }
+    queryFn: async () => {
+      // Only attempt to fetch if we have tokens
+      if (!TokenManager.isAuthenticated()) {
+        return null;
       }
-
-      setIsInitialized(true);
-    };
-
-    initializeAuth();
-  }, []);
+      try {
+        return await authAPI.getCurrentUser();
+      } catch (err) {
+        // If fetching fails (even after interceptor tried refresh), clear tokens
+        console.log('[Auth] Failed to fetch user, clearing tokens');
+        TokenManager.clearTokens();
+        return null;
+      }
+    },
+    retry: false, // Don't retry - axios interceptor handles token refresh
+    staleTime: Infinity, // User data rarely changes during session
+    gcTime: Infinity, // Keep cached data
+    refetchOnWindowFocus: false, // Don't refetch on tab focus
+    refetchOnMount: true, // Always fetch on mount to validate session
+  });
 
   // ==========================================================================
   // Login Mutation
@@ -187,7 +176,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const contextValue: AuthContextType = {
     user,
     isAuthenticated: !!user && TokenManager.isAuthenticated(),
-    loading: isLoading || loginMutation.isPending || registerMutation.isPending || isRefreshingSession,
+    // isLoading is true during initial fetch, isPending during mutations
+    loading: isLoading || loginMutation.isPending || registerMutation.isPending,
     login,
     register,
     logout,

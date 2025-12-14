@@ -28,6 +28,7 @@ from app.core.dependencies import (
     get_verify_email_use_case,
     get_update_user_profile_use_case,
     get_current_active_user,
+    get_current_user_allow_inactive,
     get_password_hasher,
     get_password_verifier,
     get_user_repository,
@@ -634,12 +635,14 @@ async def change_password(
     description="Get authenticated user's profile",
 )
 async def get_current_user_profile(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user_allow_inactive),
 ):
     """
     Get current authenticated user's profile.
 
-    Requires authentication.
+    Requires authentication. Allows inactive users to view their profile
+    (needed for onboarding flows and session validation on page refresh).
+    Only blocks suspended/banned users.
 
     Returns user profile data.
     """

@@ -64,7 +64,9 @@ class SetOneTimeAvailabilityRequest(BaseModel):
     specific_date: str = Field(..., description="Date in YYYY-MM-DD format")
     start_time: str = Field(..., description="Start time in HH:MM format")
     end_time: str = Field(..., description="End time in HH:MM format")
-    slot_duration_minutes: int = Field(default=50, ge=15, le=120)
+    # Allow larger slot durations for one-time availability (up to 16 hours / 960 minutes)
+    # This supports creating single-slot availability blocks of any reasonable size
+    slot_duration_minutes: int = Field(default=50, ge=15, le=960)
     break_minutes: int = Field(default=10, ge=0, le=60)
 
 
@@ -340,16 +342,12 @@ async def get_my_availability(
     """
     Get all availability for the current instructor.
 
-    This includes:
-    1. Availability rules from the availability_slots table
-    2. Synthetic availability derived from active booking slots (for data consistency)
+    Returns availability rules with actual slot times (for one-time availability,
+    times are derived from the actual booking slots).
     """
     try:
         # Get availability rules
         availabilities = availability_repo.get_by_instructor(current_user.id)
-
-        # Track which availability rule IDs we've seen
-        seen_availability_ids = {avail.id for avail in availabilities}
 
         items = []
         for avail in availabilities:
@@ -377,42 +375,6 @@ async def get_my_availability(
                 end_time=actual_end_time.strftime("%H:%M"),
                 slot_duration_minutes=avail.slot_duration_minutes,
                 break_minutes=avail.break_minutes,
-            ))
-
-        # Also check for orphaned booking slots (slots without a valid availability rule)
-        # These can happen if availability rules were deleted but slots remain
-        all_slots = booking_slot_repo.get_by_instructor(current_user.id, status="available")
-
-        # Group orphaned slots by date to create synthetic availability entries
-        orphaned_slots_by_date = {}
-        for slot in all_slots:
-            rule_id = slot.availability_rule_id
-            # Check if this slot's availability rule is not in our seen list
-            if rule_id is None or rule_id not in seen_availability_ids:
-                slot_date = slot.start_at.date().isoformat()
-                if slot_date not in orphaned_slots_by_date:
-                    orphaned_slots_by_date[slot_date] = []
-                orphaned_slots_by_date[slot_date].append(slot)
-
-        # Create synthetic availability entries for orphaned slots
-        for date_str, slots in orphaned_slots_by_date.items():
-            min_start = min(s.start_at for s in slots)
-            max_end = max(s.end_at for s in slots)
-
-            # Use negative ID to indicate synthetic entry (not a real availability rule)
-            # Use the first slot's ID as a reference
-            synthetic_id = -slots[0].id if slots[0].id else -1
-
-            items.append(AvailabilityResponse(
-                id=synthetic_id,
-                instructor_id=current_user.id,
-                availability_type="one_time",
-                day_of_week=None,
-                specific_date=date_str,
-                start_time=time(min_start.hour, min_start.minute).strftime("%H:%M"),
-                end_time=time(max_end.hour, max_end.minute).strftime("%H:%M"),
-                slot_duration_minutes=slots[0].duration_minutes,
-                break_minutes=0,  # Unknown for orphaned slots
             ))
 
         return AvailabilityListResponse(
