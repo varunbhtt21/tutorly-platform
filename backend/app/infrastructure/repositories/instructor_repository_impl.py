@@ -82,7 +82,7 @@ class SQLAlchemyInstructorProfileRepository(IInstructorProfileRepository):
             query = self.db.query(SQLAlchemyInstructorProfile)
 
             if status:
-                query = query.filter(SQLAlchemyInstructorProfile.profile_status == status.value)
+                query = query.filter(SQLAlchemyInstructorProfile.status == status.value)
 
             db_profiles = query.offset(skip).limit(limit).all()
 
@@ -135,7 +135,7 @@ class SQLAlchemyInstructorProfileRepository(IInstructorProfileRepository):
             query = self.db.query(SQLAlchemyInstructorProfile)
 
             if status:
-                query = query.filter(SQLAlchemyInstructorProfile.profile_status == status.value)
+                query = query.filter(SQLAlchemyInstructorProfile.status == status.value)
 
             return query.count()
 

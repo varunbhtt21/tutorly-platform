@@ -93,6 +93,7 @@ from app.application.use_cases.scheduling import (
 
 # HTTP Bearer token security scheme
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 
 # ============================================================================
@@ -148,9 +149,10 @@ def get_instructor_subject_repository(db: Session = Depends(get_db)) -> IInstruc
 
 def get_register_user_use_case(
     user_repo: IUserRepository = Depends(get_user_repository),
+    instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
 ) -> RegisterUserUseCase:
-    """Get RegisterUser use case."""
-    return RegisterUserUseCase(user_repo)
+    """Get RegisterUser use case with instructor repository for instructor registration."""
+    return RegisterUserUseCase(user_repo, instructor_repo)
 
 
 def get_verify_email_use_case(
@@ -412,6 +414,28 @@ async def get_token_payload(
     return payload
 
 
+async def get_optional_token_payload(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
+) -> Optional[dict]:
+    """
+    Extract and verify JWT token from Authorization header (optional).
+
+    Returns None if no token is provided, allowing public access.
+
+    Args:
+        credentials: Optional HTTP bearer credentials
+
+    Returns:
+        Decoded token payload or None if no token provided
+    """
+    if not credentials:
+        return None
+
+    token = credentials.credentials
+    payload = decode_token(token)
+    return payload  # Returns None if token is invalid
+
+
 async def get_current_user_allow_inactive(
     payload: dict = Depends(get_token_payload),
     user_repo: IUserRepository = Depends(get_user_repository),
@@ -506,6 +530,34 @@ async def get_current_active_user(
             detail=f"Account {current_user.status.value}",
         )
     return current_user
+
+
+async def get_optional_current_user(
+    payload: Optional[dict] = Depends(get_optional_token_payload),
+    user_repo: IUserRepository = Depends(get_user_repository),
+) -> Optional[User]:
+    """
+    Get current authenticated user from JWT token (optional).
+
+    Returns None if no token is provided, allowing public access.
+    Use this for endpoints that should work with or without authentication.
+
+    Args:
+        payload: Optional decoded JWT token payload
+        user_repo: User repository
+
+    Returns:
+        Current authenticated user or None if not authenticated
+    """
+    if not payload:
+        return None
+
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+
+    user = user_repo.get_by_id(int(user_id))
+    return user  # Returns None if user not found
 
 
 # ============================================================================

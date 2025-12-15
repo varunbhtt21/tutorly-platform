@@ -3,6 +3,7 @@ import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'reac
 import { Toaster } from 'sonner';
 import { QueryProvider } from './context/QueryProvider';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { WebSocketProvider } from './context/WebSocketContext';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Login from './pages/Login';
@@ -12,6 +13,9 @@ import Onboarding from './pages/Onboarding';
 import InstructorSearch from './pages/InstructorSearch';
 import InstructorProfile from './pages/InstructorProfile';
 import Calendar from './pages/Calendar';
+import InstructorHome from './pages/InstructorHome';
+import Messages from './pages/Messages';
+import AdminDashboard from './pages/AdminDashboard';
 
 // Protected Route Component
 interface ProtectedRouteProps {
@@ -79,6 +83,33 @@ const AppContent = () => {
             </ProtectedRoute>
           }
         />
+
+        <Route
+          path="/instructor/home"
+          element={
+            <ProtectedRoute roles={['instructor']}>
+              <InstructorHome />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/messages"
+          element={
+            <ProtectedRoute>
+              <Messages />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -89,16 +120,18 @@ const App = () => {
   return (
     <QueryProvider>
       <AuthProvider>
-        <Router>
-          <AppContent />
-          <Toaster
-            position="top-right"
-            richColors
-            closeButton
-            expand={false}
-            duration={4000}
-          />
-        </Router>
+        <WebSocketProvider>
+          <Router>
+            <AppContent />
+            <Toaster
+              position="top-right"
+              richColors
+              closeButton
+              expand={false}
+              duration={4000}
+            />
+          </Router>
+        </WebSocketProvider>
       </AuthProvider>
     </QueryProvider>
   );

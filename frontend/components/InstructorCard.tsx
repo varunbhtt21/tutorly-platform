@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom';
 import type { InstructorProfile } from '../types/api';
 import { Star, Globe, Play, Heart, MessageCircle, Award, Clock } from 'lucide-react';
 import { Button, Badge, Card } from './UIComponents';
+import { getMediaUrl } from '../lib/axios';
 
 interface Props {
   instructor: InstructorProfile;
@@ -31,8 +32,8 @@ const InstructorCard: React.FC<Props> = ({ instructor }) => {
   const displayName = instructor.headline ||
     (instructor.languages?.[0]?.language ? `${instructor.languages[0].language} Tutor` : 'Language Tutor');
 
-  // Generate avatar URL
-  const avatarUrl = instructor.profile_photo_url ||
+  // Generate avatar URL (use getMediaUrl to convert relative paths to full URLs)
+  const avatarUrl = getMediaUrl(instructor.profile_photo_url) ||
     `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random&size=256`;
 
   return (

@@ -22,6 +22,7 @@ from app.core.dependencies import (
     get_current_instructor_allow_inactive,
     get_current_admin,
     get_current_user,
+    get_optional_current_user,
     get_create_instructor_profile_use_case,
     get_update_instructor_about_use_case,
     get_update_instructor_pricing_use_case,
@@ -329,18 +330,32 @@ class VerifyInstructorResponse(BaseModel):
     message: str
 
 
-# Search
+# Search - Language item matching frontend LanguageResponse
+class LanguageListItem(BaseModel):
+    """Language item for search results."""
+    language: str
+    proficiency: str = "Native"
+
+
+# Search - InstructorListItem matches frontend InstructorProfile type
 class InstructorListItem(BaseModel):
-    """Instructor list item for search results."""
+    """Instructor list item for search results - matches frontend InstructorProfile."""
     id: int
     user_id: int
-    headline: Optional[str]
-    photo_url: Optional[str]
-    hourly_rate: Decimal
-    trial_lesson_price: Optional[Decimal]
-    years_of_experience: int
-    languages: List[str]
-    subjects: List[str]
+    status: InstructorStatus = InstructorStatus.VERIFIED
+    country_of_birth: Optional[str] = None
+    languages: List[LanguageListItem] = []
+    profile_photo_url: Optional[str] = None
+    bio: Optional[str] = None
+    teaching_experience: Optional[str] = None
+    headline: Optional[str] = None
+    intro_video_url: Optional[str] = None
+    hourly_rate: Optional[Decimal] = None
+    trial_lesson_price: Optional[Decimal] = None
+    onboarding_step: int = 7
+    is_onboarding_complete: bool = True
+    education: List[EducationResponse] = []
+    experience: List[ExperienceResponse] = []
 
 
 class InstructorSearchResponse(BaseModel):
@@ -839,7 +854,7 @@ async def get_my_profile(
 async def get_instructor_profile(
     instructor_id: int,
     instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
-    current_user: Optional[User] = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_current_user),
 ) -> InstructorProfileResponse:
     """
     Get instructor profile by ID.
@@ -969,27 +984,93 @@ async def verify_instructor(
     description="Search for verified instructors with various filters.",
 )
 async def search_instructors(
-    subject_id: Optional[int] = Query(None, description="Filter by subject ID"),
     min_price: Optional[Decimal] = Query(None, ge=Decimal("0.00"), description="Minimum hourly rate"),
     max_price: Optional[Decimal] = Query(None, le=Decimal("1000.00"), description="Maximum hourly rate"),
-    languages: Optional[str] = Query(None, description="Comma-separated language codes"),
-    min_experience: Optional[int] = Query(None, ge=0, description="Minimum years of experience"),
+    language: Optional[str] = Query(None, description="Filter by language"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(20, ge=1, le=100, description="Maximum number of records to return"),
     instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
 ) -> InstructorSearchResponse:
     """Search for verified instructors with filters."""
     try:
-        # Note: This is a simplified implementation
-        # In a full implementation, this would use a dedicated search use case
-        # with proper filtering, sorting, and pagination
+        # Get all verified instructors
+        profiles = instructor_repo.get_all(
+            status=InstructorStatus.VERIFIED,
+            skip=0,  # We'll filter in memory for now, then paginate
+            limit=1000,  # Get more to filter
+        )
 
-        # For now, return empty results
+        # Apply filters
+        filtered_profiles = []
+        for profile in profiles:
+            # Price filter
+            if profile.pricing:
+                hourly_rate = float(profile.pricing.regular_session_price)
+                if min_price is not None and hourly_rate < float(min_price):
+                    continue
+                if max_price is not None and hourly_rate > float(max_price):
+                    continue
+
+            # Language filter
+            if language and profile.languages_spoken:
+                lang_names = [lang.name.lower() for lang in profile.languages_spoken.languages]
+                if language.lower() not in lang_names:
+                    continue
+
+            filtered_profiles.append(profile)
+
+        # Calculate total before pagination
+        total = len(filtered_profiles)
+
+        # Apply pagination
+        paginated_profiles = filtered_profiles[skip:skip + limit]
+
+        # Convert to response DTOs
+        instructors = []
+        for profile in paginated_profiles:
+            # Extract languages as LanguageListItem objects
+            languages_list = []
+            if profile.languages_spoken:
+                languages_list = [
+                    LanguageListItem(
+                        language=lang.name,
+                        proficiency=lang.proficiency.value if hasattr(lang, 'proficiency') else "Native"
+                    )
+                    for lang in profile.languages_spoken.languages
+                ]
+
+            # Extract pricing
+            hourly_rate = None
+            trial_price = None
+            if profile.pricing:
+                hourly_rate = Decimal(str(profile.pricing.regular_session_price))
+                if profile.pricing.trial_session_price:
+                    trial_price = Decimal(str(profile.pricing.trial_session_price))
+
+            instructors.append(InstructorListItem(
+                id=profile.id,
+                user_id=profile.user_id,
+                status=profile.status,
+                country_of_birth=profile.country_of_birth,
+                languages=languages_list,
+                profile_photo_url=profile.profile_photo_url,
+                bio=profile.bio,
+                teaching_experience=profile.teaching_experience,
+                headline=profile.headline,
+                intro_video_url=profile.intro_video_url,
+                hourly_rate=hourly_rate,
+                trial_lesson_price=trial_price,
+                onboarding_step=profile.onboarding_step,
+                is_onboarding_complete=profile.is_onboarding_complete,
+                education=[],  # Can be populated if needed
+                experience=[],  # Can be populated if needed
+            ))
+
         return InstructorSearchResponse(
-            total=0,
+            total=total,
             skip=skip,
             limit=limit,
-            instructors=[],
+            instructors=instructors,
         )
 
     except Exception as e:

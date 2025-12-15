@@ -4,6 +4,8 @@ from typing import Optional, Callable
 from app.domains.user.entities import User
 from app.domains.user.repositories import IUserRepository
 from app.domains.user.value_objects import Email, Password, UserRole
+from app.domains.instructor.entities import InstructorProfile
+from app.domains.instructor.repositories import IInstructorProfileRepository
 
 
 class RegisterUserUseCase:
@@ -15,19 +17,26 @@ class RegisterUserUseCase:
     2. Creating password value object with hashing
     3. Creating User aggregate root via factory method
     4. Persisting to repository
+    5. Creating instructor profile if registering as instructor
 
     This use case bridges the application layer and domain layer,
     ensuring business rules are enforced.
     """
 
-    def __init__(self, user_repo: IUserRepository):
+    def __init__(
+        self,
+        user_repo: IUserRepository,
+        instructor_repo: Optional[IInstructorProfileRepository] = None,
+    ):
         """
         Initialize RegisterUserUseCase.
 
         Args:
             user_repo: User repository for persistence
+            instructor_repo: Optional instructor repository for creating instructor profiles
         """
         self.user_repo = user_repo
+        self.instructor_repo = instructor_repo
 
     def execute(
         self,
@@ -95,5 +104,10 @@ class RegisterUserUseCase:
         # Persist to repository
         # Repository returns user with assigned ID
         saved_user = self.user_repo.save(user)
+
+        # If registering as instructor, create instructor profile
+        if role == UserRole.INSTRUCTOR and self.instructor_repo is not None:
+            instructor_profile = InstructorProfile.create_for_user(saved_user.id)
+            self.instructor_repo.save(instructor_profile)
 
         return saved_user

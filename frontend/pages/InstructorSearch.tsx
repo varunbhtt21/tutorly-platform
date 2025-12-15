@@ -3,9 +3,9 @@
  * Modern, Figma-inspired design with micro-animations and polished UX
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { instructorAPI } from '../services';
+import { instructorAPI, subjectsAPI } from '../services';
 import InstructorCard from '../components/InstructorCard';
 import { Input, Select, Button, Card } from '../components/UIComponents';
 import {
@@ -129,11 +129,39 @@ const InstructorSearch: React.FC = () => {
   const [priceRange, setPriceRange] = useState({ min: '', max: '' });
   const [sortBy, setSortBy] = useState<'rating' | 'price_low' | 'price_high' | 'reviews'>('rating');
 
-  // Quick filter subjects
-  const quickFilters = ['All', 'English', 'Spanish', 'Math', 'Science', 'Music', 'Programming'];
   const [activeQuickFilter, setActiveQuickFilter] = useState('All');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
+
+  // Fetch subjects from API
+  const { data: subjectsData } = useQuery({
+    queryKey: ['subjects'],
+    queryFn: () => subjectsAPI.getSubjects(),
+    staleTime: 10 * 60 * 1000, // Cache subjects for 10 minutes
+  });
+
+  // Build subject options for dropdown from API data
+  const subjectOptions = useMemo(() => {
+    const options = [{ value: '', label: 'All Subjects' }];
+    if (subjectsData?.subjects) {
+      subjectsData.subjects.forEach((subject) => {
+        options.push({ value: subject.slug, label: subject.name });
+      });
+    }
+    return options;
+  }, [subjectsData]);
+
+  // Build quick filter chips from first 6 subjects
+  const quickFilters = useMemo(() => {
+    const filters = ['All'];
+    if (subjectsData?.subjects) {
+      // Take first 6 subjects for quick filters
+      subjectsData.subjects.slice(0, 6).forEach((subject) => {
+        filters.push(subject.name);
+      });
+    }
+    return filters;
+  }, [subjectsData]);
 
   const { data, isLoading: loading, isFetching } = useQuery({
     queryKey: ['instructors', debouncedSearchTerm, selectedSubject, priceRange],
@@ -292,15 +320,7 @@ const InstructorSearch: React.FC = () => {
                 <label className="font-semibold text-gray-800 block text-sm">Subject</label>
                 <div className="relative">
                   <Select
-                    options={[
-                      { value: '', label: 'All Subjects' },
-                      { value: 'english', label: 'English' },
-                      { value: 'math', label: 'Mathematics' },
-                      { value: 'spanish', label: 'Spanish' },
-                      { value: 'science', label: 'Science' },
-                      { value: 'music', label: 'Music' },
-                      { value: 'programming', label: 'Programming' },
-                    ]}
+                    options={subjectOptions}
                     value={selectedSubject}
                     onChange={(e) => setSelectedSubject(e.target.value)}
                   />

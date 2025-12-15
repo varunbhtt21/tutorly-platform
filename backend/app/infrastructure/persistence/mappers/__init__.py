@@ -12,6 +12,9 @@ from .availability_mapper import AvailabilityMapper
 from .session_mapper import SessionMapper
 from .time_off_mapper import TimeOffMapper
 from .booking_slot_mapper import BookingSlotMapper
+from .conversation_mapper import ConversationMapper
+from .message_mapper import MessageMapper
+from .read_status_mapper import ReadStatusMapper
 
 __all__ = [
     "UserMapper",
@@ -26,4 +29,7 @@ __all__ = [
     "SessionMapper",
     "TimeOffMapper",
     "BookingSlotMapper",
+    "ConversationMapper",
+    "MessageMapper",
+    "ReadStatusMapper",
 ]

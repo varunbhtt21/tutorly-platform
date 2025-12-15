@@ -491,3 +491,158 @@ export interface CalendarMessageResponse {
   message: string;
   success: boolean;
 }
+
+// ============================================================================
+// Messaging Types
+// ============================================================================
+
+export enum MessageType {
+  TEXT = 'text',
+  IMAGE = 'image',
+  FILE = 'file',
+  SYSTEM = 'system',
+}
+
+export enum MessageStatus {
+  SENT = 'sent',
+  DELIVERED = 'delivered',
+  READ = 'read',
+}
+
+// User info for messaging
+export interface MessageUserInfo {
+  id: number;
+  first_name: string;
+  last_name: string;
+  profile_photo_url?: string | null;
+  role: string;
+}
+
+// Conversation
+export interface Conversation {
+  id: number;
+  participant_1_id: number;
+  participant_2_id: number;
+  other_participant?: MessageUserInfo | null;
+  last_message_at?: string | null;
+  unread_count: number;
+  created_at: string;
+}
+
+// Message
+export interface Message {
+  id: number;
+  conversation_id: number;
+  sender: MessageUserInfo;
+  content: string;
+  message_type: MessageType | string;
+  status: MessageStatus | string;
+  reply_to_id?: number | null;
+  created_at: string;
+}
+
+// Message Attachment
+export interface MessageAttachment {
+  id: number;
+  message_id: number;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  file_url: string;
+}
+
+// Feature Access (based on booking status)
+export interface FeatureAccess {
+  can_send_text: boolean;
+  can_send_image: boolean;
+  can_send_file: boolean;
+  has_booking: boolean;
+}
+
+// Unread Count
+export interface UnreadCountResponse {
+  unread_count: number;
+}
+
+// Requests
+export interface StartConversationRequest {
+  recipient_id: number;
+}
+
+export interface SendMessageRequest {
+  content: string;
+  message_type?: string;
+  reply_to_id?: number;
+}
+
+export interface MarkReadRequest {
+  message_id: number;
+}
+
+// WebSocket Event Types
+export interface WSConnectedEvent {
+  type: 'connected';
+  user_id: number;
+}
+
+export interface WSNewMessageEvent {
+  type: 'new_message';
+  message: Message;
+}
+
+export interface WSMessageSentEvent {
+  type: 'message_sent';
+  message: Message;
+  temp_id?: string;
+}
+
+export interface WSMessageDeliveredEvent {
+  type: 'message_delivered';
+  message_id: number;
+}
+
+export interface WSMessageReadEvent {
+  type: 'message_read';
+  conversation_id: number;
+  message_id: number;
+  read_by: number;
+}
+
+export interface WSUserTypingEvent {
+  type: 'user_typing';
+  conversation_id: number;
+  user_id: number;
+}
+
+export interface WSUserStoppedTypingEvent {
+  type: 'user_stopped_typing';
+  conversation_id: number;
+  user_id: number;
+}
+
+export interface WSUserOnlineEvent {
+  type: 'user_online';
+  user_id: number;
+}
+
+export interface WSUserOfflineEvent {
+  type: 'user_offline';
+  user_id: number;
+}
+
+export interface WSErrorEvent {
+  type: 'error';
+  message: string;
+}
+
+export type WSEvent =
+  | WSConnectedEvent
+  | WSNewMessageEvent
+  | WSMessageSentEvent
+  | WSMessageDeliveredEvent
+  | WSMessageReadEvent
+  | WSUserTypingEvent
+  | WSUserStoppedTypingEvent
+  | WSUserOnlineEvent
+  | WSUserOfflineEvent
+  | WSErrorEvent;

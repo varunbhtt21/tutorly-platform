@@ -62,6 +62,22 @@ class FileType(str, enum.Enum):
     INTRO_VIDEO = "intro_video"
     CERTIFICATE = "certificate"
     DOCUMENT = "document"
+    MESSAGE_ATTACHMENT = "message_attachment"
+
+
+class MessageType(str, enum.Enum):
+    """Message type enumeration."""
+    TEXT = "text"
+    IMAGE = "image"
+    FILE = "file"
+    SYSTEM = "system"
+
+
+class MessageStatus(str, enum.Enum):
+    """Message delivery status."""
+    SENT = "sent"
+    DELIVERED = "delivered"
+    READ = "read"
 
 
 class FileStatus(str, enum.Enum):
@@ -484,3 +500,152 @@ class TimeOff(Base):
     recurrence_day = Column(Integer, nullable=True)  # 0=Monday, 6=Sunday
 
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ============================================================================
+# Messaging Models
+# ============================================================================
+
+class Conversation(Base):
+    """Conversation between two users ORM model."""
+
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Participants (always 2 users - student and instructor)
+    participant_1_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    participant_2_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Last message tracking for efficient sorting
+    last_message_id = Column(Integer, nullable=True)
+    last_message_at = Column(DateTime, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    participant_1 = relationship("User", foreign_keys=[participant_1_id])
+    participant_2 = relationship("User", foreign_keys=[participant_2_id])
+    messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
+    read_statuses = relationship("ConversationReadStatus", back_populates="conversation", cascade="all, delete-orphan")
+
+
+class Message(Base):
+    """Message in a conversation ORM model."""
+
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    sender_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Message content
+    content = Column(Text, nullable=True)  # Nullable for attachment-only messages
+    message_type = Column(SQLEnum(MessageType), nullable=False, default=MessageType.TEXT)
+    status = Column(SQLEnum(MessageStatus), nullable=False, default=MessageStatus.SENT)
+
+    # Reply to another message (optional)
+    reply_to_id = Column(
+        Integer,
+        ForeignKey("messages.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Soft delete
+    deleted_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    conversation = relationship("Conversation", back_populates="messages")
+    sender = relationship("User", foreign_keys=[sender_id])
+    reply_to = relationship("Message", remote_side=[id], foreign_keys=[reply_to_id])
+    attachments = relationship("MessageAttachment", back_populates="message", cascade="all, delete-orphan")
+
+
+class MessageAttachment(Base):
+    """Attachment for a message ORM model."""
+
+    __tablename__ = "message_attachments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    message_id = Column(
+        Integer,
+        ForeignKey("messages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    file_id = Column(
+        Integer,
+        ForeignKey("uploaded_files.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    # File metadata (denormalized for quick access)
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(100), nullable=False)  # MIME type
+    file_size = Column(Integer, nullable=False)  # bytes
+    file_url = Column(String(500), nullable=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    message = relationship("Message", back_populates="attachments")
+    file = relationship("UploadedFile", foreign_keys=[file_id])
+
+
+class ConversationReadStatus(Base):
+    """Tracks read status per user per conversation."""
+
+    __tablename__ = "conversation_read_status"
+
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Last message this user has read
+    last_read_message_id = Column(Integer, nullable=True)
+    last_read_at = Column(DateTime, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    conversation = relationship("Conversation", back_populates="read_statuses")
+    user = relationship("User", foreign_keys=[user_id])

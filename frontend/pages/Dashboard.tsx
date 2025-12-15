@@ -86,6 +86,11 @@ const Dashboard = () => {
 
   if (!user) return <Navigate to="/login" />;
 
+  // Admin users should use the Admin Dashboard - redirect them there
+  if (user.role === 'admin') {
+    return <Navigate to="/admin" replace />;
+  }
+
   const isInstructor = user.role === 'instructor';
 
   // Fetch instructor dashboard data
@@ -99,6 +104,11 @@ const Dashboard = () => {
     enabled: isInstructor,
     staleTime: 1000 * 60 * 5, // Cache for 5 minutes
   });
+
+  // Redirect instructors to onboarding if profile is not complete
+  if (isInstructor && dashboard && !dashboard.profile.is_onboarding_complete) {
+    return <Navigate to="/dashboard/instructor/onboarding" replace />;
+  }
 
   // Student dashboard - modern design
   if (!isInstructor) {

@@ -48,9 +48,14 @@ const Login = () => {
   };
 
   // Helper for demo login
-  const demoLogin = (role: 'student' | 'instructor') => {
-    setEmail(role === 'instructor' ? 'demo_instructor@tutorly.com' : 'demo_student@tutorly.com');
-    setPassword('password123');
+  const demoLogin = (role: 'student' | 'instructor' | 'admin') => {
+    const emails = {
+      student: 'demo_student@tutorly.com',
+      instructor: 'demo_instructor@tutorly.com',
+      admin: 'demo_admin@tutorly.com',
+    };
+    setEmail(emails[role]);
+    setPassword('Password123@');
   };
 
   return (
@@ -126,12 +131,15 @@ const Login = () => {
                 <span className="px-4 bg-white/80 backdrop-blur rounded-full text-gray-500 font-medium">Quick Demo Access</span>
               </div>
             </div>
-            <div className="mt-6 grid grid-cols-2 gap-4">
+            <div className="mt-6 grid grid-cols-3 gap-3">
               <Button variant="glass" size="sm" onClick={() => demoLogin('student')}>
-                Student Demo
+                Student
               </Button>
               <Button variant="glass" size="sm" onClick={() => demoLogin('instructor')}>
-                Instructor Demo
+                Instructor
+              </Button>
+              <Button variant="glass" size="sm" onClick={() => demoLogin('admin')}>
+                Admin
               </Button>
             </div>
           </div>
