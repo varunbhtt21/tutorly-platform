@@ -1,10 +1,12 @@
 """Use case for getting instructor dashboard data."""
 
 from decimal import Decimal
+from typing import Optional
 
 from app.domains.instructor.entities import InstructorProfile, InstructorDashboard
 from app.domains.instructor.repositories import IInstructorProfileRepository
 from app.domains.instructor.value_objects import DashboardStats
+from app.domains.wallet.repositories import IWalletRepository
 
 
 class GetInstructorDashboardUseCase:
@@ -15,14 +17,20 @@ class GetInstructorDashboardUseCase:
     statistics for dashboard display.
     """
 
-    def __init__(self, instructor_repo: IInstructorProfileRepository):
+    def __init__(
+        self,
+        instructor_repo: IInstructorProfileRepository,
+        wallet_repo: Optional[IWalletRepository] = None,
+    ):
         """
         Initialize GetInstructorDashboardUseCase.
 
         Args:
             instructor_repo: Repository for instructor profile persistence
+            wallet_repo: Optional wallet repository for earnings data
         """
         self.instructor_repo = instructor_repo
+        self.wallet_repo = wallet_repo
 
     def execute(self, user_id: int) -> InstructorDashboard:
         """
@@ -47,16 +55,23 @@ class GetInstructorDashboardUseCase:
         # 2. Calculate profile completion percentage
         completion = self._calculate_profile_completion(profile)
 
-        # 3. Build stats (uses existing profile data + placeholder for sessions)
+        # 3. Get wallet earnings if wallet_repo is provided
+        total_earnings = Decimal("0.00")
+        if self.wallet_repo:
+            wallet = self.wallet_repo.get_by_instructor_id(profile.id)
+            if wallet:
+                total_earnings = wallet.total_earned
+
+        # 4. Build stats (uses existing profile data + wallet earnings)
         stats = DashboardStats(
             upcoming_sessions_count=0,  # Placeholder until session system
             total_students=0,  # Placeholder until booking system
             completed_sessions=profile.total_sessions_completed,
-            total_earnings=Decimal(str(profile.total_earnings)),
+            total_earnings=total_earnings,
             profile_completion_percent=completion,
         )
 
-        # 4. Return dashboard aggregate
+        # 5. Return dashboard aggregate
         return InstructorDashboard(
             profile=profile,
             user=user,

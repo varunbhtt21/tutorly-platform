@@ -24,7 +24,7 @@ const InstructorProfileCard: React.FC<InstructorProfileCardProps> = ({ profile, 
   const formatPrice = (price?: number | string) => {
     if (!price) return 'Not set';
     const numPrice = typeof price === 'string' ? parseFloat(price) : price;
-    return `$${numPrice.toFixed(0)}`;
+    return `₹${numPrice.toFixed(0)}`;
   };
 
   const getStatusBadgeVariant = (status: string) => {
@@ -221,7 +221,7 @@ const InstructorProfileCard: React.FC<InstructorProfileCardProps> = ({ profile, 
               <div className="flex items-center gap-1.5 text-sm">
                 <span className="text-gray-400">Trial:</span>
                 <span className="font-semibold text-emerald-600">
-                  ${typeof profile.trial_lesson_price === 'string'
+                  ₹{typeof profile.trial_lesson_price === 'string'
                     ? parseFloat(profile.trial_lesson_price).toFixed(0)
                     : profile.trial_lesson_price.toFixed(0)}
                 </span>

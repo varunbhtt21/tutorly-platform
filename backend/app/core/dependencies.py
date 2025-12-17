@@ -31,6 +31,9 @@ from app.domains.scheduling.repositories import (
     ITimeOffRepository,
     IBookingSlotRepository,
 )
+from app.domains.wallet.repositories import IWalletRepository
+from app.domains.payment.repositories import IPaymentRepository
+from app.domains.payment.services.payment_gateway import IPaymentGateway
 
 # Infrastructure repository implementations
 from app.infrastructure.repositories.user_repository_impl import SQLAlchemyUserRepository
@@ -45,6 +48,10 @@ from app.infrastructure.repositories.availability_repository_impl import Availab
 from app.infrastructure.repositories.session_repository_impl import SessionRepositoryImpl
 from app.infrastructure.repositories.time_off_repository_impl import TimeOffRepositoryImpl
 from app.infrastructure.repositories.booking_slot_repository_impl import BookingSlotRepositoryImpl
+from app.infrastructure.repositories.wallet_repository_impl import SQLAlchemyWalletRepository
+from app.infrastructure.repositories.payment_repository_impl import PaymentRepositoryImpl
+from app.infrastructure.payment_gateways.razorpay_gateway import RazorpayGateway
+from app.infrastructure.payment_gateways.mock_gateway import MockGateway
 
 # Domain entities
 from app.domains.user.entities import User
@@ -88,6 +95,12 @@ from app.application.use_cases.scheduling import (
     DeleteTimeOffUseCase,
     UpdateSlotUseCase,
     DeleteSlotUseCase,
+)
+from app.application.use_cases.booking import (
+    InitiateBookingUseCase,
+    ConfirmBookingUseCase,
+    CancelBookingUseCase,
+    GetBookingStatusUseCase,
 )
 
 
@@ -139,6 +152,46 @@ def get_subject_repository(db: Session = Depends(get_db)) -> ISubjectRepository:
 def get_instructor_subject_repository(db: Session = Depends(get_db)) -> IInstructorSubjectRepository:
     """Get InstructorSubject repository implementation."""
     return SQLAlchemyInstructorSubjectRepository(db)
+
+
+def get_wallet_repository(db: Session = Depends(get_db)) -> IWalletRepository:
+    """Get Wallet repository implementation."""
+    return SQLAlchemyWalletRepository(db)
+
+
+def get_payment_repository(db: Session = Depends(get_db)) -> IPaymentRepository:
+    """Get Payment repository implementation."""
+    return PaymentRepositoryImpl(db)
+
+
+def get_payment_gateway() -> IPaymentGateway:
+    """
+    Get Payment gateway implementation.
+
+    Uses environment variables for configuration:
+    - RAZORPAY_KEY_ID
+    - RAZORPAY_KEY_SECRET
+    - USE_MOCK_GATEWAY (for testing)
+    """
+    import os
+
+    use_mock = os.getenv("USE_MOCK_GATEWAY", "false").lower() == "true"
+
+    if use_mock:
+        return MockGateway()
+
+    key_id = os.getenv("RAZORPAY_KEY_ID", "")
+    key_secret = os.getenv("RAZORPAY_KEY_SECRET", "")
+
+    if not key_id or not key_secret:
+        # Fall back to mock for development
+        return MockGateway()
+
+    return RazorpayGateway(
+        key_id=key_id,
+        key_secret=key_secret,
+        business_name="Tutorly",
+    )
 
 
 # ============================================================================
@@ -236,9 +289,10 @@ def get_add_experience_use_case(
 
 def get_instructor_dashboard_use_case(
     instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+    wallet_repo: IWalletRepository = Depends(get_wallet_repository),
 ) -> GetInstructorDashboardUseCase:
-    """Get GetInstructorDashboard use case."""
-    return GetInstructorDashboardUseCase(instructor_repo)
+    """Get GetInstructorDashboard use case with wallet integration."""
+    return GetInstructorDashboardUseCase(instructor_repo, wallet_repo)
 
 
 # Student Use Cases
@@ -631,3 +685,62 @@ def get_password_hasher():
 def get_password_verifier():
     """Get password verifier function."""
     return verify_password
+
+
+# ============================================================================
+# Booking Use Case Dependencies
+# ============================================================================
+
+
+def get_initiate_booking_use_case(
+    payment_repo: IPaymentRepository = Depends(get_payment_repository),
+    slot_repo: IBookingSlotRepository = Depends(get_booking_slot_repository),
+    instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+    payment_gateway: IPaymentGateway = Depends(get_payment_gateway),
+) -> InitiateBookingUseCase:
+    """Get InitiateBooking use case."""
+    return InitiateBookingUseCase(
+        payment_repo=payment_repo,
+        slot_repo=slot_repo,
+        instructor_repo=instructor_repo,
+        payment_gateway=payment_gateway,
+    )
+
+
+def get_confirm_booking_use_case(
+    payment_repo: IPaymentRepository = Depends(get_payment_repository),
+    slot_repo: IBookingSlotRepository = Depends(get_booking_slot_repository),
+    session_repo: ISessionRepository = Depends(get_session_repository),
+    wallet_repo: IWalletRepository = Depends(get_wallet_repository),
+    payment_gateway: IPaymentGateway = Depends(get_payment_gateway),
+) -> ConfirmBookingUseCase:
+    """Get ConfirmBooking use case."""
+    return ConfirmBookingUseCase(
+        payment_repo=payment_repo,
+        slot_repo=slot_repo,
+        session_repo=session_repo,
+        wallet_repo=wallet_repo,
+        payment_gateway=payment_gateway,
+    )
+
+
+def get_cancel_booking_use_case(
+    payment_repo: IPaymentRepository = Depends(get_payment_repository),
+    slot_repo: IBookingSlotRepository = Depends(get_booking_slot_repository),
+    session_repo: ISessionRepository = Depends(get_session_repository),
+    payment_gateway: IPaymentGateway = Depends(get_payment_gateway),
+) -> CancelBookingUseCase:
+    """Get CancelBooking use case."""
+    return CancelBookingUseCase(
+        payment_repo=payment_repo,
+        slot_repo=slot_repo,
+        session_repo=session_repo,
+        payment_gateway=payment_gateway,
+    )
+
+
+def get_booking_status_use_case(
+    payment_repo: IPaymentRepository = Depends(get_payment_repository),
+) -> GetBookingStatusUseCase:
+    """Get GetBookingStatus use case."""
+    return GetBookingStatusUseCase(payment_repo=payment_repo)

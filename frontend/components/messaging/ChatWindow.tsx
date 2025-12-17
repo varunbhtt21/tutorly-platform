@@ -8,12 +8,9 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import {
   ArrowLeft,
-  Phone,
-  Video,
   MoreVertical,
   Loader2,
   MessageCircle,
-  Circle,
 } from 'lucide-react';
 import type { Conversation, Message } from '../../types/api';
 import { useWebSocket } from '../../context/WebSocketContext';
@@ -173,26 +170,6 @@ const ChatHeader: React.FC<{
 
       {/* Actions */}
       <div className="flex items-center gap-1">
-        <button
-          className="
-            p-2.5 rounded-xl text-gray-500
-            hover:text-primary-600 hover:bg-white/50
-            transition-all duration-200
-          "
-          title="Voice call"
-        >
-          <Phone size={18} />
-        </button>
-        <button
-          className="
-            p-2.5 rounded-xl text-gray-500
-            hover:text-primary-600 hover:bg-white/50
-            transition-all duration-200
-          "
-          title="Video call"
-        >
-          <Video size={18} />
-        </button>
         <button
           className="
             p-2.5 rounded-xl text-gray-500

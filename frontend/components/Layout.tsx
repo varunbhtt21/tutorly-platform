@@ -25,6 +25,7 @@ import {
   MessageSquare,
   Shield,
 } from 'lucide-react';
+import { WalletDropdown } from './wallet';
 
 // NavLink component with active state and hover animation
 interface NavLinkProps {
@@ -394,6 +395,7 @@ const Layout: React.FC = () => {
             <div className="hidden lg:flex items-center gap-2">
               {isAuthenticated ? (
                 <>
+                  <WalletDropdown />
                   <NotificationBell />
                   <UserMenu user={user} onLogout={handleLogout} />
                 </>

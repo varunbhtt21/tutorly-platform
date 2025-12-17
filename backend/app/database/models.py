@@ -88,6 +88,59 @@ class FileStatus(str, enum.Enum):
     DELETED = "deleted"
 
 
+class WalletStatus(str, enum.Enum):
+    """Wallet status enumeration."""
+    ACTIVE = "active"
+    FROZEN = "frozen"
+    SUSPENDED = "suspended"
+
+
+class TransactionType(str, enum.Enum):
+    """Wallet transaction type enumeration."""
+    DEPOSIT = "deposit"
+    WITHDRAWAL = "withdrawal"
+    REFUND = "refund"
+    ADJUSTMENT = "adjustment"
+
+
+class TransactionStatus(str, enum.Enum):
+    """Wallet transaction status enumeration."""
+    PENDING = "pending"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class PaymentStatus(str, enum.Enum):
+    """Payment status enumeration."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    REFUNDED = "refunded"
+    CANCELLED = "cancelled"
+
+
+class PaymentMethod(str, enum.Enum):
+    """Payment method enumeration."""
+    UPI = "upi"
+    CARD = "card"
+    NETBANKING = "netbanking"
+    WALLET = "wallet"
+
+
+class PaymentGateway(str, enum.Enum):
+    """Payment gateway enumeration."""
+    RAZORPAY = "razorpay"
+    MOCK = "mock"
+
+
+class LessonType(str, enum.Enum):
+    """Lesson type enumeration."""
+    TRIAL = "trial"
+    REGULAR = "regular"
+
+
 # ============================================================================
 # ORM Models
 # ============================================================================
@@ -649,3 +702,152 @@ class ConversationReadStatus(Base):
     # Relationships
     conversation = relationship("Conversation", back_populates="read_statuses")
     user = relationship("User", foreign_keys=[user_id])
+
+
+# ============================================================================
+# Wallet Models
+# ============================================================================
+
+class Wallet(Base):
+    """Instructor wallet ORM model for storing earnings."""
+
+    __tablename__ = "wallets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    instructor_id = Column(
+        Integer,
+        ForeignKey("instructor_profiles.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True
+    )
+
+    # Balances
+    balance = Column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    total_earned = Column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    total_withdrawn = Column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+
+    # Settings
+    currency = Column(String(3), nullable=False, default="INR")
+    status = Column(SQLEnum(WalletStatus), nullable=False, default=WalletStatus.ACTIVE)
+
+    # Timestamps
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    instructor_profile = relationship("InstructorProfile", backref="wallet")
+    transactions = relationship("WalletTransaction", back_populates="wallet", cascade="all, delete-orphan")
+
+
+class WalletTransaction(Base):
+    """Wallet transaction ORM model for tracking all wallet operations."""
+
+    __tablename__ = "wallet_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    wallet_id = Column(
+        Integer,
+        ForeignKey("wallets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Transaction details
+    type = Column(SQLEnum(TransactionType), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    balance_after = Column(Numeric(12, 2), nullable=False)
+    status = Column(SQLEnum(TransactionStatus), nullable=False, default=TransactionStatus.PENDING)
+
+    # Reference to source (session, withdrawal request, etc.)
+    reference_type = Column(String(50), nullable=True)  # 'session', 'withdrawal', 'refund', 'manual'
+    reference_id = Column(Integer, nullable=True)
+    description = Column(Text, nullable=True)
+
+    # Additional data (payment provider info, etc.) - stored as JSON string
+    extra_data = Column(Text, nullable=True)
+
+    # Failure tracking
+    failure_reason = Column(Text, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    wallet = relationship("Wallet", back_populates="transactions")
+
+
+# ============================================================================
+# Payment Models
+# ============================================================================
+
+class Payment(Base):
+    """Payment ORM model for tracking lesson booking payments."""
+
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Participants
+    student_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    instructor_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Session link (after booking confirmed)
+    session_id = Column(
+        Integer,
+        ForeignKey("sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+
+    # Slot being booked
+    slot_id = Column(
+        Integer,
+        ForeignKey("booking_slots.id", ondelete="SET NULL"),
+        nullable=False,
+        index=True
+    )
+
+    # Payment details
+    amount = Column(Numeric(12, 2), nullable=False)
+    currency = Column(String(3), nullable=False, default="INR")
+    status = Column(SQLEnum(PaymentStatus), nullable=False, default=PaymentStatus.PENDING)
+    lesson_type = Column(SQLEnum(LessonType), nullable=False, default=LessonType.TRIAL)
+
+    # Payment method
+    payment_method = Column(SQLEnum(PaymentMethod), nullable=True)
+    gateway = Column(SQLEnum(PaymentGateway), nullable=False, default=PaymentGateway.RAZORPAY)
+
+    # Gateway references
+    gateway_order_id = Column(String(100), nullable=True, unique=True, index=True)
+    gateway_payment_id = Column(String(100), nullable=True, unique=True, index=True)
+    gateway_signature = Column(String(255), nullable=True)
+
+    # Error tracking
+    failure_reason = Column(Text, nullable=True)
+
+    # Metadata (stored as JSON string)
+    description = Column(Text, nullable=True)
+    extra_data = Column(Text, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    student = relationship("User", foreign_keys=[student_id])
+    instructor = relationship("User", foreign_keys=[instructor_id])
+    session = relationship("Session", foreign_keys=[session_id])
+    slot = relationship("BookingSlot", foreign_keys=[slot_id])

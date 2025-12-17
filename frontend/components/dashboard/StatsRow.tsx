@@ -195,7 +195,7 @@ const StatsRow: React.FC<StatsRowProps> = ({ stats }) => {
       <StatCard
         title="Total Earnings"
         value={stats.total_earnings}
-        prefix="$"
+        prefix="₹"
         icon={<DollarSign size={22} strokeWidth={2.5} />}
         gradient="bg-gradient-to-br from-amber-50/50 to-yellow-50/50"
         iconBg="bg-amber-100"

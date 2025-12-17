@@ -16,6 +16,9 @@ import { useAuth } from '../context/AuthContext';
 import { messagingAPI } from '../services';
 import type { Conversation, Message } from '../types/api';
 
+// Map to track tempId -> optimistic message id for proper replacement
+const pendingMessages = new Map<string, number>();
+
 const Messages: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -122,10 +125,15 @@ const Messages: React.FC = () => {
   const handleSendMessage = useCallback((content: string, replyToId?: number) => {
     if (!selectedConversationId || !user) return;
 
-    // Create optimistic message
-    const tempId = `temp-${Date.now()}`;
+    // Create unique IDs for tracking
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const optimisticId = -Date.now(); // Negative ID to distinguish from real messages
+
+    // Track this pending message for later replacement
+    pendingMessages.set(tempId, optimisticId);
+
     const optimisticMessage: Message = {
-      id: Date.now(),
+      id: optimisticId,
       conversation_id: selectedConversationId,
       sender: {
         id: user.id,
@@ -151,6 +159,8 @@ const Messages: React.FC = () => {
     if (isConnected) {
       wsSendMessage(selectedConversationId, content, tempId);
     } else {
+      // For REST fallback, clean up pending message tracking after mutation completes
+      pendingMessages.delete(tempId);
       sendMessageMutation.mutate({ conversationId: selectedConversationId, content });
     }
   }, [selectedConversationId, user, isConnected, wsSendMessage, queryClient, sendMessageMutation]);
@@ -179,13 +189,28 @@ const Messages: React.FC = () => {
     });
 
     // Handle message sent confirmation (replace optimistic with real)
-    const unsubSent = onMessageSent((message, _tempId) => {
+    const unsubSent = onMessageSent((message, tempId) => {
       queryClient.setQueryData<Message[]>(
         ['messages', message.conversation_id],
         (old = []) => {
-          // Remove temp message and add real one
-          const filtered = old.filter((m) => !m.id.toString().startsWith('temp-'));
-          return [...filtered, message];
+          // Find and remove the optimistic message using the tempId mapping
+          const optimisticId = tempId ? pendingMessages.get(tempId) : undefined;
+
+          let filtered: Message[];
+          if (optimisticId !== undefined) {
+            // Remove the specific optimistic message
+            filtered = old.filter((m) => m.id !== optimisticId);
+            pendingMessages.delete(tempId!);
+          } else {
+            // Fallback: remove any negative ID messages (optimistic messages use negative IDs)
+            filtered = old.filter((m) => m.id > 0);
+          }
+
+          // Only add if not already present (prevent duplicates)
+          if (!filtered.some((m) => m.id === message.id)) {
+            return [...filtered, message];
+          }
+          return filtered;
         }
       );
     });

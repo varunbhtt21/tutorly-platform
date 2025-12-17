@@ -116,7 +116,7 @@ if os.path.exists(storage_uploads_dir):
 
 
 # Include routers
-from app.routers import auth, instructor, upload, calendar, messaging, websocket, subjects, admin
+from app.routers import auth, instructor, upload, calendar, messaging, websocket, subjects, admin, wallet, booking
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(instructor.router, prefix="/api/instructor", tags=["Instructor"])
@@ -126,12 +126,13 @@ app.include_router(messaging.router, prefix="/api", tags=["Messaging"])
 app.include_router(websocket.router, prefix="/api", tags=["WebSocket"])
 app.include_router(subjects.router, prefix="/api", tags=["Subjects"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(wallet.router, prefix="/api", tags=["Wallet"])
+app.include_router(booking.router, prefix="/api", tags=["Booking"])
 
 # Additional routers to be added as features are implemented:
-# from app.routers import student, search, booking, session, payment
+# from app.routers import student, search, session, payment
 # app.include_router(student.router, prefix="/api/student", tags=["Student"])
 # app.include_router(search.router, prefix="/api/search", tags=["Search"])
-# app.include_router(booking.router, prefix="/api/booking", tags=["Booking"])
 # app.include_router(session.router, prefix="/api/session", tags=["Session"])
 # app.include_router(payment.router, prefix="/api/payment", tags=["Payment"])
 

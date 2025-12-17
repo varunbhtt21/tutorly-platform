@@ -1,0 +1,64 @@
+# Tutorly Platform Database Migrations
+
+This directory contains Alembic database migrations for the Tutorly Platform.
+
+## Commands
+
+### Check current revision
+```bash
+alembic current
+```
+
+### View migration history
+```bash
+alembic history --verbose
+```
+
+### Create a new migration (auto-generate from model changes)
+```bash
+alembic revision --autogenerate -m "description_of_changes"
+```
+
+### Create a new empty migration (for manual SQL)
+```bash
+alembic revision -m "description_of_changes"
+```
+
+### Apply all pending migrations
+```bash
+alembic upgrade head
+```
+
+### Upgrade to specific revision
+```bash
+alembic upgrade <revision_id>
+```
+
+### Downgrade one revision
+```bash
+alembic downgrade -1
+```
+
+### Downgrade to specific revision
+```bash
+alembic downgrade <revision_id>
+```
+
+### Show SQL without executing (for review)
+```bash
+alembic upgrade head --sql
+```
+
+## Best Practices
+
+1. Always review auto-generated migrations before applying
+2. Test migrations on a copy of production data
+3. Include both upgrade() and downgrade() functions
+4. Use descriptive migration message names
+5. Don't modify migrations that have been applied to production
+
+## File Naming Convention
+
+Files are named: `YYYYMMDD_HHMMSS_<revision>_<slug>.py`
+
+Example: `20251217_110805_5faa72b43b46_initial_schema.py`

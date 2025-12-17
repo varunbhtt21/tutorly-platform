@@ -1,12 +1,20 @@
-import React from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { instructorAPI } from '../services';
+import { toast } from 'sonner';
+import { instructorAPI, messagingAPI } from '../services';
 import { Button, Badge, Card } from '../components/UIComponents';
-import { PlayCircle, MessageSquare, Check } from 'lucide-react';
+import { PlayCircle, MessageSquare, Check, Loader2 } from 'lucide-react';
+import { getMediaUrl } from '../lib/axios';
+import { BookingModal } from '../components/booking';
+import { useAuth } from '../context/AuthContext';
 
 const InstructorProfile = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuth();
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
 
   // Fetch instructor profile with React Query
   const { data: instructor, isLoading: loading, isError } = useQuery({
@@ -18,6 +26,38 @@ const InstructorProfile = () => {
     enabled: !!id, // Only run query if id exists
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
+
+  // Handle Send Message button click
+  const handleSendMessage = async () => {
+    // Check if user is authenticated
+    if (!isAuthenticated || !user) {
+      toast.error('Please log in to send a message');
+      navigate('/login', { state: { from: `/instructor/${id}` } });
+      return;
+    }
+
+    // Check if user is trying to message themselves
+    if (instructor?.user_id === user.id) {
+      toast.error("You can't message yourself");
+      return;
+    }
+
+    setIsSendingMessage(true);
+    try {
+      // Start or get existing conversation with the instructor
+      const conversation = await messagingAPI.startConversation({
+        recipient_id: instructor!.user_id,
+      });
+
+      // Navigate to the messages page with the conversation selected
+      navigate(`/messages?conversation=${conversation.id}`);
+    } catch (error: any) {
+      console.error('Failed to start conversation:', error);
+      toast.error(error.response?.data?.detail || 'Failed to start conversation. Please try again.');
+    } finally {
+      setIsSendingMessage(false);
+    }
+  };
 
   if (loading) return <div className="h-screen flex items-center justify-center"><div className="animate-spin h-10 w-10 border-4 border-primary-600 rounded-full border-t-transparent"></div></div>;
   if (isError || !instructor) return <div className="text-center py-20">Instructor not found</div>;
@@ -39,7 +79,7 @@ const InstructorProfile = () => {
               <div className="flex flex-col sm:flex-row gap-8 items-start">
                 <div className="relative shrink-0">
                   <img
-                    src={instructor.profile_photo_url || 'https://via.placeholder.com/144'}
+                    src={getMediaUrl(instructor.profile_photo_url) || 'https://via.placeholder.com/144'}
                     className="w-36 h-36 rounded-2xl object-cover border-4 border-white shadow-xl"
                     alt="Profile"
                   />
@@ -80,16 +120,25 @@ const InstructorProfile = () => {
               <p className="text-gray-600 leading-relaxed whitespace-pre-line text-lg">{instructor.bio}</p>
             </Card>
 
-            {/* Video Placeholder (Phase 4) */}
+            {/* Introduction Video */}
             <Card className="p-8">
               <h2 className="text-xl font-bold text-gray-900 mb-4">Introduction Video</h2>
-              <div className="aspect-video bg-gray-900 rounded-2xl flex flex-col items-center justify-center text-white relative overflow-hidden group cursor-pointer shadow-inner">
-                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors"></div>
-                <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center relative z-10 group-hover:scale-110 transition-transform duration-300 border border-white/30">
-                    <PlayCircle size={40} className="text-white fill-white/20" />
+              {instructor.intro_video_url ? (
+                <video
+                  src={getMediaUrl(instructor.intro_video_url)}
+                  controls
+                  className="w-full aspect-video rounded-2xl bg-gray-900 shadow-inner"
+                  poster={getMediaUrl(instructor.profile_photo_url)}
+                />
+              ) : (
+                <div className="aspect-video bg-gray-900 rounded-2xl flex flex-col items-center justify-center text-white relative overflow-hidden group cursor-pointer shadow-inner">
+                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors"></div>
+                  <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center relative z-10 group-hover:scale-110 transition-transform duration-300 border border-white/30">
+                      <PlayCircle size={40} className="text-white fill-white/20" />
+                  </div>
+                  <p className="relative z-10 mt-4 font-medium text-white/90">Video introduction coming soon</p>
                 </div>
-                <p className="relative z-10 mt-4 font-medium text-white/90">Video introduction coming soon</p>
-              </div>
+              )}
             </Card>
           </div>
 
@@ -100,14 +149,29 @@ const InstructorProfile = () => {
                 <div className="text-center mb-8">
                   <p className="text-gray-500 font-medium mb-2 text-sm uppercase tracking-wider">Trial Lesson Price</p>
                   <div className="text-5xl font-extrabold text-gray-900">
-                    ${instructor.trial_lesson_price?.toString() || instructor.hourly_rate?.toString() || '0'}
+                    ₹{instructor.trial_lesson_price?.toString() || instructor.hourly_rate?.toString() || '0'}
                   </div>
                 </div>
 
                 <div className="space-y-4 mb-8">
-                  <Button className="w-full py-4 text-lg shadow-xl shadow-primary-500/30">Book Trial Lesson</Button>
-                  <Button variant="glass" className="w-full gap-2">
-                    <MessageSquare size={18} /> Send Message
+                  <Button
+                    onClick={() => setShowBookingModal(true)}
+                    className="w-full py-4 text-lg shadow-xl shadow-primary-500/30"
+                  >
+                    Book Trial Lesson
+                  </Button>
+                  <Button
+                    variant="glass"
+                    className="w-full gap-2"
+                    onClick={handleSendMessage}
+                    disabled={isSendingMessage}
+                  >
+                    {isSendingMessage ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : (
+                      <MessageSquare size={18} />
+                    )}
+                    {isSendingMessage ? 'Starting conversation...' : 'Send Message'}
                   </Button>
                 </div>
 
@@ -126,6 +190,17 @@ const InstructorProfile = () => {
           </div>
         </div>
       </div>
+
+      {/* Booking Modal */}
+      <BookingModal
+        isOpen={showBookingModal}
+        onClose={() => setShowBookingModal(false)}
+        instructorId={instructor.id}
+        instructorName={`Instructor #${instructor.id}`}
+        instructorPhoto={instructor.profile_photo_url}
+        trialPrice={parseFloat(instructor.trial_lesson_price?.toString() || instructor.hourly_rate?.toString() || '0')}
+        hourlyRate={parseFloat(instructor.hourly_rate?.toString() || '0')}
+      />
     </div>
   );
 };

@@ -228,7 +228,7 @@ const InstructorCard: React.FC<Props> = ({ instructor }) => {
             <div>
               <div className="flex items-baseline gap-1">
                 <span className="text-3xl font-extrabold text-gray-900">
-                  ${hourlyRate || 25}
+                  ₹{hourlyRate || 25}
                 </span>
                 <span className="text-sm text-gray-500 font-medium">/hour</span>
               </div>
@@ -236,7 +236,7 @@ const InstructorCard: React.FC<Props> = ({ instructor }) => {
                 <div className="flex items-center gap-1.5 mt-1">
                   <Clock size={12} className="text-green-600" />
                   <span className="text-xs text-green-600 font-semibold">
-                    ${trialPrice} trial lesson
+                    ₹{trialPrice} trial lesson
                   </span>
                 </div>
               )}
