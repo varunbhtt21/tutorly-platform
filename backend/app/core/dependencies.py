@@ -35,6 +35,8 @@ from app.domains.scheduling.repositories import (
 from app.domains.wallet.repositories import IWalletRepository
 from app.domains.payment.repositories import IPaymentRepository
 from app.domains.payment.services.payment_gateway import IPaymentGateway
+from app.domains.classroom.repositories import IClassroomRepository
+from app.domains.classroom.services import IVideoProvider, ClassroomService
 
 # Infrastructure repository implementations
 from app.infrastructure.repositories.user_repository_impl import SQLAlchemyUserRepository
@@ -53,6 +55,8 @@ from app.infrastructure.repositories.wallet_repository_impl import SQLAlchemyWal
 from app.infrastructure.repositories.payment_repository_impl import PaymentRepositoryImpl
 from app.infrastructure.payment_gateways.razorpay_gateway import RazorpayGateway
 from app.infrastructure.payment_gateways.mock_gateway import MockGateway
+from app.infrastructure.repositories.classroom_repository_impl import ClassroomRepositoryImpl
+from app.infrastructure.video_providers import DailyVideoProvider, MockVideoProvider
 
 # Domain entities
 from app.domains.user.entities import User
@@ -103,6 +107,11 @@ from app.application.use_cases.booking import (
     ConfirmBookingUseCase,
     CancelBookingUseCase,
     GetBookingStatusUseCase,
+)
+from app.application.use_cases.classroom import (
+    CreateClassroomUseCase,
+    JoinClassroomUseCase,
+    EndClassroomUseCase,
 )
 
 
@@ -780,3 +789,100 @@ def get_booking_status_use_case(
 ) -> GetBookingStatusUseCase:
     """Get GetBookingStatus use case."""
     return GetBookingStatusUseCase(payment_repo=payment_repo)
+
+
+# ============================================================================
+# Classroom/Video Dependencies
+# ============================================================================
+
+
+def get_classroom_repository(db: Session = Depends(get_db)) -> IClassroomRepository:
+    """Get Classroom repository implementation."""
+    return ClassroomRepositoryImpl(db)
+
+
+def get_video_provider() -> IVideoProvider:
+    """
+    Get Video provider implementation.
+
+    Uses Daily.co by default, falls back to mock for development.
+    To switch providers: replace DailyVideoProvider with another implementation.
+    """
+    if settings.USE_MOCK_VIDEO_PROVIDER:
+        return MockVideoProvider()
+
+    if not settings.DAILY_API_KEY:
+        # Fall back to mock for development if credentials not configured
+        return MockVideoProvider()
+
+    return DailyVideoProvider(
+        api_key=settings.DAILY_API_KEY,
+        domain=settings.DAILY_DOMAIN,
+    )
+
+
+def get_classroom_service(
+    video_provider: IVideoProvider = Depends(get_video_provider),
+    session_repo: ISessionRepository = Depends(get_session_repository),
+    classroom_repo: IClassroomRepository = Depends(get_classroom_repository),
+) -> ClassroomService:
+    """
+    Get ClassroomService domain service.
+
+    This service handles classroom lifecycle management:
+    - Create-on-join pattern (auto-create classrooms)
+    - Room validity checks (detect expired rooms)
+    - Room recreation (transparent recovery from expired rooms)
+    """
+    return ClassroomService(
+        video_provider=video_provider,
+        session_repo=session_repo,
+        classroom_repo=classroom_repo,
+    )
+
+
+def get_create_classroom_use_case(
+    classroom_repo: IClassroomRepository = Depends(get_classroom_repository),
+    session_repo: ISessionRepository = Depends(get_session_repository),
+    video_provider: IVideoProvider = Depends(get_video_provider),
+) -> CreateClassroomUseCase:
+    """Get CreateClassroom use case."""
+    return CreateClassroomUseCase(
+        classroom_repo=classroom_repo,
+        session_repo=session_repo,
+        video_provider=video_provider,
+    )
+
+
+def get_join_classroom_use_case(
+    classroom_service: ClassroomService = Depends(get_classroom_service),
+    classroom_repo: IClassroomRepository = Depends(get_classroom_repository),
+    user_repo: IUserRepository = Depends(get_user_repository),
+    video_provider: IVideoProvider = Depends(get_video_provider),
+) -> JoinClassroomUseCase:
+    """
+    Get JoinClassroom use case.
+
+    Uses ClassroomService for:
+    - Create-on-join pattern (auto-create classrooms)
+    - Room lifecycle management (detect/recreate expired rooms)
+
+    The use case is thin and delegates room management to the domain service.
+    """
+    return JoinClassroomUseCase(
+        classroom_service=classroom_service,
+        classroom_repo=classroom_repo,
+        user_repo=user_repo,
+        video_provider=video_provider,
+    )
+
+
+def get_end_classroom_use_case(
+    classroom_repo: IClassroomRepository = Depends(get_classroom_repository),
+    video_provider: IVideoProvider = Depends(get_video_provider),
+) -> EndClassroomUseCase:
+    """Get EndClassroom use case."""
+    return EndClassroomUseCase(
+        classroom_repo=classroom_repo,
+        video_provider=video_provider,
+    )

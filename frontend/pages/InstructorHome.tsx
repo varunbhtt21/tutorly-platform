@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { instructorAPI } from '../services';
@@ -39,22 +39,72 @@ const getGreeting = () => {
 };
 
 // Format time remaining until session
-const getTimeRemaining = (dateString: string): { text: string; isNow: boolean; isSoon: boolean } => {
+// Returns detailed countdown info for UI display
+interface TimeRemainingInfo {
+  text: string;           // Human-readable time remaining
+  buttonText: string;     // Text to show on the action button
+  isNow: boolean;         // Session is happening now (can enter classroom)
+  isSoon: boolean;        // Session is starting soon (within 30 mins)
+  canEnter: boolean;      // Whether user can enter the classroom (within 5 mins of start or ongoing)
+}
+
+const getTimeRemaining = (dateString: string): TimeRemainingInfo => {
   const sessionDate = new Date(dateString);
   const now = new Date();
   const diffMs = sessionDate.getTime() - now.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMins / 60);
   const diffDays = Math.floor(diffHours / 24);
+  const remainingHours = diffHours % 24;
+  const remainingMins = diffMins % 60;
 
   if (diffMins <= 0) {
-    return { text: 'Now', isNow: true, isSoon: false };
+    return {
+      text: 'Now',
+      buttonText: 'Enter Classroom',
+      isNow: true,
+      isSoon: false,
+      canEnter: true
+    };
+  } else if (diffMins <= 5) {
+    // Within 5 minutes - can enter classroom
+    return {
+      text: `In ${diffMins} minute${diffMins !== 1 ? 's' : ''}`,
+      buttonText: 'Enter Classroom',
+      isNow: false,
+      isSoon: true,
+      canEnter: true
+    };
   } else if (diffMins < 60) {
-    return { text: `In ${diffMins} minute${diffMins !== 1 ? 's' : ''}`, isNow: false, isSoon: diffMins <= 30 };
+    return {
+      text: `In ${diffMins} minute${diffMins !== 1 ? 's' : ''}`,
+      buttonText: `Starts in ${diffMins} min`,
+      isNow: false,
+      isSoon: diffMins <= 30,
+      canEnter: false
+    };
   } else if (diffHours < 24) {
-    return { text: `In ${diffHours} hour${diffHours !== 1 ? 's' : ''}`, isNow: false, isSoon: diffHours <= 1 };
+    const buttonText = remainingMins > 0
+      ? `Starts in ${diffHours}h ${remainingMins}m`
+      : `Starts in ${diffHours} hour${diffHours !== 1 ? 's' : ''}`;
+    return {
+      text: `In ${diffHours} hour${diffHours !== 1 ? 's' : ''}`,
+      buttonText,
+      isNow: false,
+      isSoon: diffHours <= 1,
+      canEnter: false
+    };
   } else {
-    return { text: `In ${diffDays} day${diffDays !== 1 ? 's' : ''}`, isNow: false, isSoon: false };
+    const buttonText = remainingHours > 0
+      ? `Starts in ${diffDays}d ${remainingHours}h`
+      : `Starts in ${diffDays} day${diffDays !== 1 ? 's' : ''}`;
+    return {
+      text: `In ${diffDays} day${diffDays !== 1 ? 's' : ''}`,
+      buttonText,
+      isNow: false,
+      isSoon: false,
+      canEnter: false
+    };
   }
 };
 
@@ -87,6 +137,7 @@ interface NextSessionCardProps {
 const NextSessionCard: React.FC<NextSessionCardProps> = ({ session }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [, setTick] = useState(0);
+  const navigate = useNavigate();
 
   // Update time every minute to refresh countdown
   useEffect(() => {
@@ -95,6 +146,10 @@ const NextSessionCard: React.FC<NextSessionCardProps> = ({ session }) => {
   }, []);
 
   const timeRemaining = getTimeRemaining(session.start_at);
+
+  const handleEnterClassroom = () => {
+    navigate(`/classroom/${session.id}`);
+  };
 
   return (
     <Card
@@ -247,14 +302,27 @@ const NextSessionCard: React.FC<NextSessionCardProps> = ({ session }) => {
         <div className="flex flex-wrap gap-3 mt-4 relative z-10">
           <Button
             size="lg"
+            disabled={!timeRemaining.canEnter}
+            onClick={handleEnterClassroom}
             className={`
-              gap-2 px-8 shadow-lg shadow-primary-500/25
-              transition-all duration-300
-              ${isHovered ? 'shadow-xl shadow-primary-500/30 scale-[1.02]' : ''}
+              gap-2 px-8 transition-all duration-300
+              ${timeRemaining.canEnter
+                ? `shadow-lg shadow-primary-500/25 ${isHovered ? 'shadow-xl shadow-primary-500/30 scale-[1.02]' : ''}`
+                : 'bg-gray-100 text-gray-600 border border-gray-200 shadow-none cursor-default'
+              }
             `}
           >
-            <Video size={20} />
-            Enter Classroom
+            {timeRemaining.canEnter ? (
+              <>
+                <Video size={20} />
+                Enter Classroom
+              </>
+            ) : (
+              <>
+                <Clock size={20} />
+                {timeRemaining.buttonText}
+              </>
+            )}
           </Button>
           <Button variant="outline" size="lg" className="gap-2">
             <MessageCircle size={18} />

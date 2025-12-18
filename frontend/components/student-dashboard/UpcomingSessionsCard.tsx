@@ -8,7 +8,7 @@
  */
 
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Calendar,
   Clock,
@@ -44,6 +44,7 @@ const SessionItem: React.FC<SessionItemProps> = ({
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [showActions, setShowActions] = useState(false);
+  const navigate = useNavigate();
 
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -81,9 +82,8 @@ const SessionItem: React.FC<SessionItemProps> = ({
   const { dayText, timeText, isToday, isTomorrow } = formatDateTime(session.start_at);
 
   const handleJoinMeeting = () => {
-    if (session.meeting_link) {
-      window.open(session.meeting_link, '_blank');
-    }
+    // Navigate to the classroom page for video session
+    navigate(`/classroom/${session.session_id}`);
   };
 
   return (

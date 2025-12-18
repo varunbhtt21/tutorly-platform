@@ -17,6 +17,7 @@ import Calendar from './pages/Calendar';
 import InstructorHome from './pages/InstructorHome';
 import Messages from './pages/Messages';
 import AdminDashboard from './pages/AdminDashboard';
+import Classroom from './pages/Classroom';
 
 // Protected Route Component
 interface ProtectedRouteProps {
@@ -108,6 +109,15 @@ const AppContent = () => {
           element={
             <ProtectedRoute roles={['admin']}>
               <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/classroom/:sessionId"
+          element={
+            <ProtectedRoute>
+              <Classroom />
             </ProtectedRoute>
           }
         />

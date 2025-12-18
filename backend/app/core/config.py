@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = ""
 
+    # Daily.co Video Provider
+    DAILY_API_KEY: str = ""
+    DAILY_DOMAIN: str = "tutorly.daily.co"
+    USE_MOCK_VIDEO_PROVIDER: bool = False  # Set True for development without API key
+
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 

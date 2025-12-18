@@ -12,7 +12,14 @@ export { messagingAPI } from './messagingAPI';
 export { subjectsAPI } from './subjectsAPI';
 export { adminAPI } from './adminAPI';
 export { studentAPI } from './studentAPI';
+export { classroomAPI } from './classroomAPI';
 export type { Subject, SubjectListResponse } from './subjectsAPI';
+export type {
+  CreateClassroomResponse,
+  JoinClassroomResponse,
+  EndClassroomResponse,
+  ClassroomStatusResponse,
+} from './classroomAPI';
 export type {
   UpcomingSession,
   StudentStats,
