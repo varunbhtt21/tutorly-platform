@@ -133,27 +133,42 @@ class UpdateSlotUseCase:
         Update availability rule's start/end time to match the min/max of its slots.
 
         This keeps the sidebar display in sync with actual slot times.
+        Uses proper domain validation to ensure data integrity.
         """
         if not self.availability_repo:
             return
 
-        # Get the availability
-        availability = self.availability_repo.get_by_id(availability_id)
-        if not availability:
-            return
-
-        # Get all slots for this availability
+        # Get all slots for this availability first
         slots = self.booking_slot_repo.get_by_availability_rule(availability_id)
         if not slots:
             return
 
-        # Find min start and max end times
+        # Find min start and max end times from slots
         min_start = min(s.start_at for s in slots)
         max_end = max(s.end_at for s in slots)
 
-        # Update availability's time range
-        availability.start_time = time(min_start.hour, min_start.minute)
-        availability.end_time = time(max_end.hour, max_end.minute)
+        # Extract time components
+        new_start_time = time(min_start.hour, min_start.minute)
+        new_end_time = time(max_end.hour, max_end.minute)
 
-        # Save the updated availability
-        self.availability_repo.save(availability)
+        # Validate before attempting to update - prevent invalid data corruption
+        # This handles edge cases like slots that might span midnight
+        if new_start_time >= new_end_time:
+            # Invalid time range - skip the update to avoid corrupting data
+            return
+
+        # Get the availability and update using the proper domain method
+        # Note: This may fail if the existing availability data is corrupted,
+        # but that's expected - we don't want to make it worse
+        try:
+            availability = self.availability_repo.get_by_id(availability_id)
+            if not availability:
+                return
+
+            # Use the domain entity's validated update method
+            availability.update_time_window(new_start_time, new_end_time)
+            self.availability_repo.save(availability)
+        except ValueError:
+            # If validation fails (e.g., corrupted existing data),
+            # skip the availability update - the slot was already saved
+            pass

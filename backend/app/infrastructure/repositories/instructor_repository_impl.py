@@ -174,3 +174,36 @@ class SQLAlchemyInstructorProfileRepository(IInstructorProfileRepository):
 
         except SQLAlchemyError as e:
             raise Exception(f"Failed to get dashboard data: {str(e)}")
+
+    def get_with_user(self, instructor_id: int) -> Optional[Tuple[InstructorProfile, User]]:
+        """
+        Get instructor profile with user data by profile ID.
+
+        Retrieves both the instructor profile and user entity for use cases
+        that need instructor details (name, email) along with profile data.
+        """
+        try:
+            # Get instructor profile by profile ID
+            db_profile = self.db.query(SQLAlchemyInstructorProfile).filter(
+                SQLAlchemyInstructorProfile.id == instructor_id
+            ).first()
+
+            if not db_profile:
+                return None
+
+            # Get user data using profile's user_id
+            db_user = self.db.query(SQLAlchemyUser).filter(
+                SQLAlchemyUser.id == db_profile.user_id
+            ).first()
+
+            if not db_user:
+                return None
+
+            # Map to domain entities
+            profile = self.mapper.to_domain(db_profile)
+            user = UserMapper.to_domain(db_user)
+
+            return (profile, user)
+
+        except SQLAlchemyError as e:
+            raise Exception(f"Failed to get instructor with user: {str(e)}")

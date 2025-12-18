@@ -33,7 +33,9 @@ from app.core.dependencies import (
     get_add_experience_use_case,
     get_instructor_repository,
     get_instructor_dashboard_use_case,
+    get_user_repository,
 )
+from app.domains.user.repositories import IUserRepository
 from app.application.use_cases.instructor import (
     CreateInstructorProfileUseCase,
     UpdateInstructorAboutUseCase,
@@ -411,13 +413,18 @@ class UserBasicInfoResponse(BaseModel):
 
 
 class UpcomingSessionResponse(BaseModel):
-    """Upcoming session DTO (placeholder)."""
+    """Upcoming session DTO for instructor dashboard."""
     id: int
+    student_id: int
     student_name: str
-    scheduled_at: str
+    start_at: datetime
+    end_at: datetime
     duration_minutes: int
-    subject: str
+    session_type: str
+    status: str
     is_trial: bool
+    amount: Decimal
+    currency: str
 
 
 class InstructorDashboardResponse(BaseModel):
@@ -426,16 +433,6 @@ class InstructorDashboardResponse(BaseModel):
     user: UserBasicInfoResponse
     stats: DashboardStatsResponse
     upcoming_sessions: List[UpcomingSessionResponse]
-
-    @classmethod
-    def from_domain(cls, dashboard: InstructorDashboard) -> "InstructorDashboardResponse":
-        """Create response from domain aggregate."""
-        return cls(
-            profile=InstructorProfileResponse.from_domain(dashboard.profile),
-            user=UserBasicInfoResponse.from_domain(dashboard.user),
-            stats=DashboardStatsResponse.from_domain(dashboard.stats),
-            upcoming_sessions=[],  # Placeholder until session system
-        )
 
 
 # Create router
@@ -901,6 +898,7 @@ async def get_instructor_profile(
 async def get_instructor_dashboard(
     current_user: User = Depends(get_current_instructor_allow_inactive),
     use_case: GetInstructorDashboardUseCase = Depends(get_instructor_dashboard_use_case),
+    user_repo: IUserRepository = Depends(get_user_repository),
 ) -> InstructorDashboardResponse:
     """
     Get instructor dashboard data.
@@ -909,14 +907,48 @@ async def get_instructor_dashboard(
     - Profile information (photo, bio, languages, pricing)
     - User information (name, email)
     - Statistics (sessions, students, earnings)
-    - Upcoming sessions (placeholder)
+    - Upcoming sessions with student details
 
     Raises:
     - 404: Instructor profile not found
     """
     try:
         dashboard = use_case.execute(current_user.id)
-        return InstructorDashboardResponse.from_domain(dashboard)
+
+        # Build student name cache for upcoming sessions
+        student_ids = {s.student_id for s in dashboard.upcoming_sessions}
+        student_cache = {}
+        for student_id in student_ids:
+            student = user_repo.get_by_id(student_id)
+            if student:
+                student_cache[student_id] = f"{student.first_name} {student.last_name}"
+            else:
+                student_cache[student_id] = "Unknown Student"
+
+        # Build upcoming sessions response with student names
+        upcoming_sessions = [
+            UpcomingSessionResponse(
+                id=session.id,
+                student_id=session.student_id,
+                student_name=student_cache.get(session.student_id, "Unknown Student"),
+                start_at=session.start_at,
+                end_at=session.end_at,
+                duration_minutes=session.duration_minutes,
+                session_type=session.session_type.value,
+                status=session.status.value,
+                is_trial=session.is_trial,
+                amount=session.amount,
+                currency=session.currency,
+            )
+            for session in dashboard.upcoming_sessions
+        ]
+
+        return InstructorDashboardResponse(
+            profile=InstructorProfileResponse.from_domain(dashboard.profile),
+            user=UserBasicInfoResponse.from_domain(dashboard.user),
+            stats=DashboardStatsResponse.from_domain(dashboard.stats),
+            upcoming_sessions=upcoming_sessions,
+        )
     except ValueError as e:
         handle_domain_exception(e)
     except Exception as e:

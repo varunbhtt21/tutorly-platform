@@ -8,6 +8,7 @@ from .add_time_off import AddTimeOffUseCase
 from .delete_time_off import DeleteTimeOffUseCase
 from .update_slot import UpdateSlotUseCase
 from .delete_slot import DeleteSlotUseCase
+from .get_available_booking_slots import GetAvailableBookingSlotsUseCase
 
 __all__ = [
     "SetAvailabilityUseCase",
@@ -18,4 +19,5 @@ __all__ = [
     "DeleteTimeOffUseCase",
     "UpdateSlotUseCase",
     "DeleteSlotUseCase",
+    "GetAvailableBookingSlotsUseCase",
 ]

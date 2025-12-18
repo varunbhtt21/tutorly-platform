@@ -5,6 +5,7 @@ Step 1 of the booking flow: Creates a payment order for lesson booking.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -18,17 +19,32 @@ from app.domains.payment.services.payment_gateway import (
     PaymentGatewayError,
 )
 from app.domains.scheduling.repositories.booking_slot_repository import IBookingSlotRepository
+from app.domains.scheduling.entities import BookingSlot
 from app.domains.instructor.repositories import IInstructorProfileRepository
 
 
 @dataclass
 class InitiateBookingRequest:
-    """Request to initiate a booking."""
+    """
+    Request to initiate a booking.
+
+    Supports two modes:
+    1. Booking an existing one-time slot: Provide slot_id
+    2. Booking from recurring availability: Provide availability_rule_id + start_at + end_at + duration_minutes
+    """
 
     student_id: int
     instructor_id: int
-    slot_id: int
     lesson_type: str = "trial"  # "trial" or "regular"
+
+    # Option 1: Existing slot ID (for one-time availability)
+    slot_id: Optional[int] = None
+
+    # Option 2: Recurring availability info (for dynamically generated slots)
+    availability_rule_id: Optional[int] = None
+    start_at: Optional[str] = None  # ISO format datetime
+    end_at: Optional[str] = None    # ISO format datetime
+    duration_minutes: Optional[int] = None
 
 
 @dataclass
@@ -96,21 +112,19 @@ class InitiateBookingUseCase:
             ValueError: If slot not available or validation fails
             PaymentGatewayError: If gateway order creation fails
         """
-        # 1. Get and validate the slot
-        slot = self.slot_repo.get_by_id(request.slot_id)
-        if not slot:
-            raise ValueError(f"Slot {request.slot_id} not found")
+        # 1. Get or create the booking slot
+        slot = self._get_or_create_slot(request)
 
         if not slot.is_available:
             raise ValueError(f"Slot is not available (status: {slot.status.value})")
 
         # 2. Check if there's already a pending payment for this slot
-        existing_payment = self.payment_repo.get_pending_for_slot(request.slot_id)
+        existing_payment = self.payment_repo.get_pending_for_slot(slot.id)
         if existing_payment:
             raise ValueError("This slot already has a pending payment")
 
-        # 3. Get instructor profile and pricing
-        instructor_result = self.instructor_repo.get_by_id(slot.instructor_id)
+        # 3. Get instructor profile and user data for pricing and instructor name
+        instructor_result = self.instructor_repo.get_with_user(slot.instructor_id)
         if not instructor_result:
             raise ValueError(f"Instructor {slot.instructor_id} not found")
 
@@ -120,21 +134,24 @@ class InitiateBookingUseCase:
         # 4. Determine lesson type and amount
         lesson_type = LessonType(request.lesson_type)
 
+        if not profile.pricing:
+            raise ValueError("Instructor has not set pricing")
+
         if lesson_type == LessonType.TRIAL:
-            if not profile.trial_lesson_price:
+            if not profile.pricing.trial_session_price:
                 raise ValueError("Instructor has not set trial lesson price")
-            amount = profile.trial_lesson_price
+            amount = profile.pricing.trial_session_price
         else:
-            if not profile.hourly_rate:
-                raise ValueError("Instructor has not set hourly rate")
-            # Calculate based on slot duration
-            amount = (profile.hourly_rate * Decimal(slot.duration_minutes)) / Decimal(60)
+            if not profile.pricing.regular_session_price:
+                raise ValueError("Instructor has not set regular session price")
+            # Calculate based on slot duration (regular_session_price is for 50 min session)
+            amount = (profile.pricing.regular_session_price * Decimal(slot.duration_minutes)) / Decimal(50)
 
         # 5. Create payment intent
         intent = PaymentIntent(
             student_id=request.student_id,
             instructor_id=request.instructor_id,
-            slot_id=request.slot_id,
+            slot_id=slot.id,
             lesson_type=lesson_type,
             amount=Decimal(str(amount)),
             currency="INR",
@@ -162,7 +179,7 @@ class InitiateBookingUseCase:
                     "payment_id": payment.id,
                     "student_id": request.student_id,
                     "instructor_id": request.instructor_id,
-                    "slot_id": request.slot_id,
+                    "slot_id": slot.id,
                     "lesson_type": lesson_type.value,
                     "description": intent.description,
                 },
@@ -192,3 +209,63 @@ class InitiateBookingUseCase:
             slot_end=slot.end_at.isoformat(),
             description=intent.description or "",
         )
+
+    def _get_or_create_slot(self, request: InitiateBookingRequest) -> BookingSlot:
+        """
+        Get an existing slot or create a new one for recurring availability.
+
+        For one-time availability: slot already exists in the database, just fetch it.
+        For recurring availability: create a new booking slot on-the-fly.
+
+        Args:
+            request: Booking initiation request
+
+        Returns:
+            BookingSlot entity
+
+        Raises:
+            ValueError: If slot not found or invalid request data
+        """
+        # Mode 1: Existing slot ID (one-time availability)
+        if request.slot_id is not None:
+            slot = self.slot_repo.get_by_id(request.slot_id)
+            if not slot:
+                raise ValueError(f"Slot {request.slot_id} not found")
+            return slot
+
+        # Mode 2: Recurring availability - create slot on-the-fly
+        if not all([request.availability_rule_id, request.start_at, request.end_at, request.duration_minutes]):
+            raise ValueError(
+                "For recurring availability booking, must provide: "
+                "availability_rule_id, start_at, end_at, and duration_minutes"
+            )
+
+        # Parse datetime strings
+        try:
+            start_at = datetime.fromisoformat(request.start_at)
+            end_at = datetime.fromisoformat(request.end_at)
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid datetime format: {e}")
+
+        # Check if a slot already exists for this time (avoid duplicates)
+        existing_slot = self.slot_repo.get_by_instructor_and_time(
+            instructor_id=request.instructor_id,
+            start_at=start_at,
+        )
+        if existing_slot:
+            return existing_slot
+
+        # Create new booking slot for recurring availability
+        slot = BookingSlot.create(
+            instructor_id=request.instructor_id,
+            availability_rule_id=request.availability_rule_id,
+            start_at=start_at,
+            end_at=end_at,
+            duration_minutes=request.duration_minutes,
+            timezone="UTC",  # Default timezone
+        )
+
+        # Save the slot to get an ID
+        slot = self.slot_repo.save(slot)
+
+        return slot

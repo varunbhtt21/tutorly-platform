@@ -39,11 +39,25 @@ router = APIRouter(prefix="/booking", tags=["Booking"])
 
 
 class InitiateBookingRequestModel(BaseModel):
-    """Request model for initiating a booking."""
+    """
+    Request model for initiating a booking.
+
+    Supports two modes:
+    1. Booking an existing one-time slot: Provide slot_id
+    2. Booking from recurring availability: Provide availability_rule_id + start_at + end_at + duration_minutes
+    """
 
     instructor_id: int
-    slot_id: int
     lesson_type: str = "trial"  # "trial" or "regular"
+
+    # Option 1: Existing slot ID (for one-time availability)
+    slot_id: Optional[int] = None
+
+    # Option 2: Recurring availability info (for dynamically generated slots)
+    availability_rule_id: Optional[int] = None
+    start_at: Optional[str] = None  # ISO format datetime
+    end_at: Optional[str] = None    # ISO format datetime
+    duration_minutes: Optional[int] = None
 
 
 class InitiateBookingResponseModel(BaseModel):
@@ -150,8 +164,12 @@ async def initiate_booking(
             InitiateBookingRequest(
                 student_id=current_user.id,
                 instructor_id=request.instructor_id,
-                slot_id=request.slot_id,
                 lesson_type=request.lesson_type,
+                slot_id=request.slot_id,
+                availability_rule_id=request.availability_rule_id,
+                start_at=request.start_at,
+                end_at=request.end_at,
+                duration_minutes=request.duration_minutes,
             )
         )
 

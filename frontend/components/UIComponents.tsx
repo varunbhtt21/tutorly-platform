@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { Portal } from './Portal';
 
 // --- Button ---
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -112,4 +113,137 @@ export const Select: React.FC<SelectProps> = ({ label, options, error, className
     </select>
     {error && <p className="mt-1 text-xs text-red-600 font-medium ml-1">{error}</p>}
   </div>
+);
+
+// --- Modal ---
+// Reusable modal component with Portal-based rendering for proper positioning
+// Uses React Portal to render outside the DOM hierarchy, preventing z-index
+// and overflow issues with navigation bars and parent containers
+interface ModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  closeOnBackdropClick?: boolean;
+}
+
+export const Modal: React.FC<ModalProps> = ({
+  isOpen,
+  onClose,
+  children,
+  maxWidth = 'lg',
+  closeOnBackdropClick = true,
+}) => {
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const maxWidthClasses = {
+    sm: 'max-w-sm',
+    md: 'max-w-md',
+    lg: 'max-w-lg',
+    xl: 'max-w-xl',
+    '2xl': 'max-w-2xl',
+  };
+
+  const handleBackdropClick = () => {
+    if (closeOnBackdropClick) {
+      onClose();
+    }
+  };
+
+  return (
+    <Portal>
+      {/* Modal Overlay - uses fixed positioning relative to viewport */}
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center"
+        style={{ margin: 0, padding: 0 }}
+      >
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+          onClick={handleBackdropClick}
+        />
+
+        {/* Modal Container - centered using flex */}
+        <div
+          className={`
+            relative w-full ${maxWidthClasses[maxWidth]}
+            bg-white rounded-2xl shadow-2xl
+            mx-4 max-h-[90vh] overflow-y-auto
+            animate-modal-scale-in
+          `}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {children}
+        </div>
+      </div>
+
+      {/* Animation Styles */}
+      <style>{`
+        @keyframes modalScaleIn {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        .animate-modal-scale-in {
+          animation: modalScaleIn 0.2s ease-out forwards;
+        }
+      `}</style>
+    </Portal>
+  );
+};
+
+// Modal sub-components for consistent structure
+interface ModalHeaderProps {
+  children: React.ReactNode;
+  onClose?: () => void;
+  className?: string;
+}
+
+export const ModalHeader: React.FC<ModalHeaderProps> = ({ children, onClose, className = '' }) => (
+  <div className={`sticky top-0 z-10 flex items-center justify-between p-6 border-b border-gray-100 bg-white ${className}`}>
+    <div className="flex-1">{children}</div>
+    {onClose && (
+      <button
+        onClick={onClose}
+        className="p-2 rounded-xl hover:bg-gray-100 transition-colors ml-4"
+      >
+        <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    )}
+  </div>
+);
+
+interface ModalBodyProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export const ModalBody: React.FC<ModalBodyProps> = ({ children, className = '' }) => (
+  <div className={`p-6 ${className}`}>{children}</div>
+);
+
+interface ModalFooterProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export const ModalFooter: React.FC<ModalFooterProps> = ({ children, className = '' }) => (
+  <div className={`p-6 border-t border-gray-100 bg-gray-50 ${className}`}>{children}</div>
 );

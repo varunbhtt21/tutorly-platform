@@ -1,11 +1,12 @@
 /**
  * Withdrawal Modal Component
  * Modal with tabs for different payment methods: Bank Transfer, Payoneer, Razorpay, UPI
+ *
+ * Uses the reusable Modal component from UIComponents for consistent behavior
  */
 
 import React, { useState } from 'react';
 import {
-  X,
   Building2,
   CreditCard,
   Smartphone,
@@ -14,7 +15,7 @@ import {
   CheckCircle,
   Loader2,
 } from 'lucide-react';
-import { Button, Input } from '../UIComponents';
+import { Modal, ModalHeader, ModalBody, ModalFooter, Button, Input } from '../UIComponents';
 import api from '../../lib/axios';
 
 interface WithdrawalModalProps {
@@ -86,8 +87,6 @@ const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
 
   // Razorpay fields
   const [razorpayAccountId, setRazorpayAccountId] = useState('');
-
-  if (!isOpen) return null;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -326,137 +325,122 @@ const WithdrawalModal: React.FC<WithdrawalModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={handleClose}
-      />
-
-      {/* Modal */}
-      <div className="relative w-full max-w-lg mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden animate-slideDown">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-gradient-to-r from-emerald-50 to-green-50">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">Withdraw Funds</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              Available balance: <span className="font-semibold text-emerald-600">{formatCurrency(balance)}</span>
-            </p>
-          </div>
-          <button
-            onClick={handleClose}
-            className="p-2 rounded-xl hover:bg-white/80 transition-colors"
-          >
-            <X size={20} className="text-gray-500" />
-          </button>
+    <Modal isOpen={isOpen} onClose={handleClose} maxWidth="lg" closeOnBackdropClick={!success}>
+      {/* Header */}
+      <ModalHeader onClose={handleClose} className="bg-gradient-to-r from-emerald-50 to-green-50">
+        <div>
+          <h2 className="text-xl font-bold text-gray-900">Withdraw Funds</h2>
+          <p className="text-sm text-gray-600 mt-1">
+            Available balance: <span className="font-semibold text-emerald-600">{formatCurrency(balance)}</span>
+          </p>
         </div>
+      </ModalHeader>
 
-        {success ? (
-          /* Success State */
-          <div className="p-8 text-center">
-            <div className="w-16 h-16 mx-auto mb-4 bg-green-100 rounded-full flex items-center justify-center">
-              <CheckCircle size={32} className="text-green-600" />
+      {success ? (
+        /* Success State */
+        <ModalBody className="text-center py-8">
+          <div className="w-16 h-16 mx-auto mb-4 bg-green-100 rounded-full flex items-center justify-center">
+            <CheckCircle size={32} className="text-green-600" />
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Withdrawal Requested!</h3>
+          <p className="text-gray-600">
+            Your withdrawal of {formatCurrency(parseFloat(amount))} has been submitted.
+            You'll receive the funds within 2-3 business days.
+          </p>
+        </ModalBody>
+      ) : (
+        <>
+          {/* Payment Method Tabs */}
+          <div className="p-4 border-b border-gray-100">
+            <div className="grid grid-cols-4 gap-2">
+              {paymentTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`
+                    flex flex-col items-center gap-1 p-3 rounded-xl transition-all duration-300
+                    ${activeTab === tab.id
+                      ? 'bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-500/30'
+                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                    }
+                  `}
+                >
+                  {tab.icon}
+                  <span className="text-xs font-medium">{tab.name}</span>
+                </button>
+              ))}
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Withdrawal Requested!</h3>
-            <p className="text-gray-600">
-              Your withdrawal of {formatCurrency(parseFloat(amount))} has been submitted.
-              You'll receive the funds within 2-3 business days.
+            <p className="text-xs text-gray-500 text-center mt-3">
+              {paymentTabs.find((t) => t.id === activeTab)?.description}
             </p>
           </div>
-        ) : (
-          <>
-            {/* Payment Method Tabs */}
-            <div className="p-4 border-b border-gray-100">
-              <div className="grid grid-cols-4 gap-2">
-                {paymentTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`
-                      flex flex-col items-center gap-1 p-3 rounded-xl transition-all duration-300
-                      ${activeTab === tab.id
-                        ? 'bg-gradient-to-br from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-500/30'
-                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                      }
-                    `}
-                  >
-                    {tab.icon}
-                    <span className="text-xs font-medium">{tab.name}</span>
-                  </button>
-                ))}
+
+          {/* Content */}
+          <ModalBody>
+            {/* Amount Input */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Withdrawal Amount
+              </label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">
+                  ₹
+                </span>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="w-full pl-8 pr-4 py-3 text-2xl font-bold text-gray-900 bg-gray-50 border border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 transition-all"
+                />
               </div>
-              <p className="text-xs text-gray-500 text-center mt-3">
-                {paymentTabs.find((t) => t.id === activeTab)?.description}
-              </p>
+              <div className="flex justify-between mt-2">
+                <span className="text-xs text-gray-500">Minimum: ₹100</span>
+                <button
+                  onClick={() => setAmount(balance.toString())}
+                  className="text-xs text-emerald-600 font-medium hover:text-emerald-700"
+                >
+                  Withdraw All
+                </button>
+              </div>
             </div>
 
-            {/* Content */}
-            <div className="p-6 max-h-[400px] overflow-y-auto">
-              {/* Amount Input */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Withdrawal Amount
-                </label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">
-                    ₹
-                  </span>
-                  <input
-                    type="number"
-                    placeholder="0"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    className="w-full pl-8 pr-4 py-3 text-2xl font-bold text-gray-900 bg-gray-50 border border-gray-200 rounded-xl focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 transition-all"
-                  />
-                </div>
-                <div className="flex justify-between mt-2">
-                  <span className="text-xs text-gray-500">Minimum: ₹100</span>
-                  <button
-                    onClick={() => setAmount(balance.toString())}
-                    className="text-xs text-emerald-600 font-medium hover:text-emerald-700"
-                  >
-                    Withdraw All
-                  </button>
-                </div>
+            {/* Payment Method Fields */}
+            {renderPaymentFields()}
+
+            {/* Error Message */}
+            {error && (
+              <div className="mt-4 flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl">
+                <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
+                <p className="text-sm text-red-600">{error}</p>
               </div>
+            )}
+          </ModalBody>
 
-              {/* Payment Method Fields */}
-              {renderPaymentFields()}
-
-              {/* Error Message */}
-              {error && (
-                <div className="mt-4 flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl">
-                  <AlertCircle size={16} className="text-red-500 flex-shrink-0" />
-                  <p className="text-sm text-red-600">{error}</p>
-                </div>
+          {/* Footer */}
+          <ModalFooter>
+            <Button
+              onClick={handleWithdraw}
+              disabled={loading}
+              className="w-full py-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 shadow-lg shadow-emerald-500/30"
+            >
+              {loading ? (
+                <Loader2 size={20} className="animate-spin" />
+              ) : (
+                <>
+                  <ArrowDownToLine size={18} />
+                  <span className="ml-2">Withdraw {amount ? formatCurrency(parseFloat(amount)) : ''}</span>
+                </>
               )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-6 border-t border-gray-100 bg-gray-50">
-              <Button
-                onClick={handleWithdraw}
-                disabled={loading}
-                className="w-full py-3 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 shadow-lg shadow-emerald-500/30"
-              >
-                {loading ? (
-                  <Loader2 size={20} className="animate-spin" />
-                ) : (
-                  <>
-                    <ArrowDownToLine size={18} />
-                    <span className="ml-2">Withdraw {amount ? formatCurrency(parseFloat(amount)) : ''}</span>
-                  </>
-                )}
-              </Button>
-              <p className="text-xs text-gray-500 text-center mt-3">
-                By withdrawing, you agree to our terms and conditions.
-                Processing fees may apply.
-              </p>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+            </Button>
+            <p className="text-xs text-gray-500 text-center mt-3">
+              By withdrawing, you agree to our terms and conditions.
+              Processing fees may apply.
+            </p>
+          </ModalFooter>
+        </>
+      )}
+    </Modal>
   );
 };
 

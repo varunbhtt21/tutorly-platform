@@ -155,3 +155,22 @@ class IInstructorProfileRepository(ABC):
             RepositoryError: If database operation fails.
         """
         pass
+
+    @abstractmethod
+    def get_with_user(self, instructor_id: int) -> Optional[Tuple[InstructorProfile, User]]:
+        """
+        Get instructor profile with associated user data by profile ID.
+
+        Retrieves both the instructor profile and user entity for use cases
+        that need instructor details (name, email) along with profile data.
+
+        Args:
+            instructor_id: Unique instructor profile identifier.
+
+        Returns:
+            Tuple of (InstructorProfile, User) if found, None otherwise.
+
+        Raises:
+            RepositoryError: If database operation fails.
+        """
+        pass

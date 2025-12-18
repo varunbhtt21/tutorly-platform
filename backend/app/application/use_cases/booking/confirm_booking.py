@@ -224,12 +224,9 @@ class ConfirmBookingUseCase:
                 money = Money.create(instructor_amount, "INR")
                 description = f"Payment for {'trial' if session_type == SessionType.TRIAL else 'regular'} session #{session.id}"
 
-                # Import inside to avoid circular dependency
-                from app.domains.wallet.entities.wallet_transaction import WalletTransaction
-
-                transaction = wallet.credit(
+                transaction = wallet.deposit(
                     amount=money,
-                    source="session",
+                    reference_type="session",
                     reference_id=session.id,
                     description=description,
                 )

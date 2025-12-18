@@ -1,6 +1,9 @@
 /**
  * Slot Selector Component
  * Displays available time slots for booking a lesson
+ *
+ * Uses the dedicated booking-slots API endpoint which returns a flat list
+ * of available slots optimized for the booking flow.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -11,26 +14,34 @@ import {
   ChevronRight,
   Loader2,
 } from 'lucide-react';
-import api from '../../lib/axios';
+import { calendarAPI } from '../../services';
 
+// Local Slot type for component state (compatible with BookingSlotItem from API)
 interface Slot {
-  id: number;
+  id: number | null; // null for dynamically generated recurring slots
   start_at: string;
   end_at: string;
   duration_minutes: number;
   status: string;
+  availability_rule_id?: number | null;
+  is_recurring?: boolean;
 }
+
+// Generate unique key for a slot (handles recurring slots without IDs)
+const getSlotKey = (slot: Slot): string => {
+  return slot.id !== null ? `slot-${slot.id}` : `recurring-${slot.start_at}`;
+};
 
 interface SlotSelectorProps {
   instructorId: number;
   onSlotSelect: (slot: Slot) => void;
-  selectedSlotId?: number;
+  selectedSlotKey?: string; // Use slot key for selection (handles recurring slots)
 }
 
 const SlotSelector: React.FC<SlotSelectorProps> = ({
   instructorId,
   onSlotSelect,
-  selectedSlotId,
+  selectedSlotKey,
 }) => {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,17 +73,18 @@ const SlotSelector: React.FC<SlotSelectorProps> = ({
       const startDate = weekStart.toISOString().split('T')[0];
       const endDate = getWeekEnd(weekStart).toISOString().split('T')[0];
 
-      const response = await api.get(
-        `/calendar/public/${instructorId}?start_date=${startDate}&end_date=${endDate}`
+      // Use the dedicated booking slots endpoint which returns a flat list
+      // of available slots optimized for the booking flow
+      const response = await calendarAPI.getAvailableBookingSlots(
+        instructorId,
+        startDate,
+        endDate
       );
 
-      // Filter only available slots
-      const availableSlots = (response.data.booking_slots || []).filter(
-        (slot: Slot) => slot.status === 'available'
-      );
-      setSlots(availableSlots);
+      // The endpoint already filters for available slots only
+      setSlots(response.slots);
     } catch (error) {
-      console.error('Error fetching slots:', error);
+      console.error('Error fetching booking slots:', error);
       setSlots([]);
     } finally {
       setLoading(false);
@@ -229,24 +241,27 @@ const SlotSelector: React.FC<SlotSelectorProps> = ({
                         No slots
                       </p>
                     ) : (
-                      daySlots.map((slot) => (
-                        <button
-                          key={slot.id}
-                          onClick={() => onSlotSelect(slot)}
-                          className={`
-                            w-full p-2 rounded-lg text-xs font-medium
-                            transition-all duration-200
-                            ${
-                              selectedSlotId === slot.id
-                                ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/30'
-                                : 'bg-primary-50 text-primary-700 hover:bg-primary-100'
-                            }
-                          `}
-                        >
-                          <Clock size={12} className="inline mr-1" />
-                          {formatTime(slot.start_at)}
-                        </button>
-                      ))
+                      daySlots.map((slot) => {
+                        const slotKey = getSlotKey(slot);
+                        return (
+                          <button
+                            key={slotKey}
+                            onClick={() => onSlotSelect(slot)}
+                            className={`
+                              w-full p-2 rounded-lg text-xs font-medium
+                              transition-all duration-200
+                              ${
+                                selectedSlotKey === slotKey
+                                  ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/30'
+                                  : 'bg-primary-50 text-primary-700 hover:bg-primary-100'
+                              }
+                            `}
+                          >
+                            <Clock size={12} className="inline mr-1" />
+                            {formatTime(slot.start_at)}
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -260,3 +275,5 @@ const SlotSelector: React.FC<SlotSelectorProps> = ({
 };
 
 export default SlotSelector;
+export { getSlotKey };
+export type { Slot };

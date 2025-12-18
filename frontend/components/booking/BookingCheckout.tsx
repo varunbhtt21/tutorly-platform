@@ -24,10 +24,12 @@ declare global {
 }
 
 interface Slot {
-  id: number;
+  id: number | null; // null for dynamically generated recurring slots
   start_at: string;
   end_at: string;
   duration_minutes: number;
+  availability_rule_id?: number | null;
+  is_recurring?: boolean;
 }
 
 interface BookingCheckoutProps {
@@ -100,11 +102,25 @@ const BookingCheckout: React.FC<BookingCheckoutProps> = ({
 
     try {
       // Step 1: Initiate booking and get Razorpay order
-      const initiateResponse = await api.post('/booking/initiate', {
+      // For recurring slots (no slot_id), we pass the availability_rule_id and slot times
+      // The backend will create the booking slot on-the-fly
+      const bookingPayload: Record<string, unknown> = {
         instructor_id: instructorId,
-        slot_id: slot.id,
         lesson_type: lessonType,
-      });
+      };
+
+      if (slot.id !== null) {
+        // One-time slot with existing slot_id
+        bookingPayload.slot_id = slot.id;
+      } else {
+        // Recurring slot - pass availability rule and time info
+        bookingPayload.availability_rule_id = slot.availability_rule_id;
+        bookingPayload.start_at = slot.start_at;
+        bookingPayload.end_at = slot.end_at;
+        bookingPayload.duration_minutes = slot.duration_minutes;
+      }
+
+      const initiateResponse = await api.post('/booking/initiate', bookingPayload);
 
       const {
         payment_id,

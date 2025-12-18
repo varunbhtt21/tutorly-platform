@@ -13,11 +13,9 @@ from datetime import date, time
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 
-from app.domains.user.entities import User
 from app.domains.scheduling.value_objects import DayOfWeek, AvailabilityType
 from app.core.dependencies import (
-    get_current_instructor,
-    get_current_instructor_allow_inactive,
+    get_current_instructor_profile_id,
     get_set_availability_use_case,
     get_get_calendar_view_use_case,
     get_delete_availability_use_case,
@@ -29,6 +27,7 @@ from app.core.dependencies import (
     get_availability_repository,
     get_time_off_repository,
     get_booking_slot_repository,
+    get_available_booking_slots_use_case,
 )
 from app.application.use_cases.scheduling import (
     SetAvailabilityUseCase,
@@ -39,6 +38,7 @@ from app.application.use_cases.scheduling import (
     DeleteTimeOffUseCase,
     UpdateSlotUseCase,
     DeleteSlotUseCase,
+    GetAvailableBookingSlotsUseCase,
 )
 from app.domains.scheduling.repositories import IAvailabilityRepository, ITimeOffRepository, IBookingSlotRepository
 
@@ -168,6 +168,41 @@ class CalendarViewResponse(BaseModel):
     days: List[CalendarDayResponse]
 
 
+# Booking Slots DTOs (for student booking flow)
+
+class BookingSlotItem(BaseModel):
+    """
+    A single available booking slot for student booking.
+
+    This is a flat representation optimized for the booking UI,
+    containing all information needed to display and book a slot.
+    """
+    id: Optional[int]  # None for dynamically generated recurring slots
+    instructor_id: int
+    start_at: str  # ISO datetime format
+    end_at: str    # ISO datetime format
+    duration_minutes: int
+    status: str    # Should always be 'available' for booking
+    availability_rule_id: Optional[int] = None
+    is_recurring: bool = False  # True if generated from recurring rule
+
+
+class AvailableBookingSlotsResponse(BaseModel):
+    """
+    Response containing available booking slots for a date range.
+
+    This endpoint returns a flat list of available slots, optimized
+    for the student booking flow. Unlike the calendar view which groups
+    slots by day for display purposes, this returns a simple array
+    that the booking UI can use directly.
+    """
+    instructor_id: int
+    start_date: str
+    end_date: str
+    slots: List[BookingSlotItem]
+    total: int
+
+
 class MessageResponse(BaseModel):
     """Generic message response."""
     message: str
@@ -243,7 +278,7 @@ def parse_date(date_str: str) -> date:
 )
 async def set_recurring_availability(
     request: SetRecurringAvailabilityRequest,
-    current_user: User = Depends(get_current_instructor_allow_inactive),
+    instructor_profile_id: int = Depends(get_current_instructor_profile_id),
     use_case: SetAvailabilityUseCase = Depends(get_set_availability_use_case),
 ) -> AvailabilityResponse:
     """Set recurring weekly availability."""
@@ -251,7 +286,7 @@ async def set_recurring_availability(
         from app.application.use_cases.scheduling.set_availability import SetAvailabilityInput
 
         input_data = SetAvailabilityInput(
-            instructor_id=current_user.id,
+            instructor_id=instructor_profile_id,
             availability_type="recurring",
             day_of_week=request.day_of_week,
             specific_date=None,
@@ -290,7 +325,7 @@ async def set_recurring_availability(
 )
 async def set_one_time_availability(
     request: SetOneTimeAvailabilityRequest,
-    current_user: User = Depends(get_current_instructor_allow_inactive),
+    instructor_profile_id: int = Depends(get_current_instructor_profile_id),
     use_case: SetAvailabilityUseCase = Depends(get_set_availability_use_case),
 ) -> AvailabilityResponse:
     """Set one-time availability for a specific date."""
@@ -298,7 +333,7 @@ async def set_one_time_availability(
         from app.application.use_cases.scheduling.set_availability import SetAvailabilityInput
 
         input_data = SetAvailabilityInput(
-            instructor_id=current_user.id,
+            instructor_id=instructor_profile_id,
             availability_type="one_time",
             day_of_week=None,
             specific_date=request.specific_date,
@@ -335,7 +370,7 @@ async def set_one_time_availability(
     description="Get all availability slots for the current instructor.",
 )
 async def get_my_availability(
-    current_user: User = Depends(get_current_instructor_allow_inactive),
+    instructor_profile_id: int = Depends(get_current_instructor_profile_id),
     availability_repo: IAvailabilityRepository = Depends(get_availability_repository),
     booking_slot_repo: IBookingSlotRepository = Depends(get_booking_slot_repository),
 ) -> AvailabilityListResponse:
@@ -347,7 +382,7 @@ async def get_my_availability(
     """
     try:
         # Get availability rules
-        availabilities = availability_repo.get_by_instructor(current_user.id)
+        availabilities = availability_repo.get_by_instructor(instructor_profile_id)
 
         items = []
         for avail in availabilities:
@@ -394,14 +429,14 @@ async def get_my_availability(
 )
 async def delete_availability(
     availability_id: int,
-    current_user: User = Depends(get_current_instructor_allow_inactive),
+    instructor_profile_id: int = Depends(get_current_instructor_profile_id),
     use_case: DeleteAvailabilityUseCase = Depends(get_delete_availability_use_case),
 ) -> MessageResponse:
     """Delete an availability slot."""
     try:
         deleted = use_case.execute(
             availability_id=availability_id,
-            instructor_id=current_user.id,
+            instructor_id=instructor_profile_id,
         )
 
         if deleted:
@@ -430,7 +465,7 @@ async def delete_availability(
 async def update_availability(
     availability_id: int,
     request: UpdateAvailabilityRequest,
-    current_user: User = Depends(get_current_instructor_allow_inactive),
+    instructor_profile_id: int = Depends(get_current_instructor_profile_id),
     use_case: UpdateAvailabilityUseCase = Depends(get_update_availability_use_case),
 ) -> MessageResponse:
     """Update an availability slot's time window."""
@@ -439,7 +474,7 @@ async def update_availability(
 
         input_data = UpdateAvailabilityInput(
             availability_id=availability_id,
-            instructor_id=current_user.id,
+            instructor_id=instructor_profile_id,
             start_time=request.start_time,
             end_time=request.end_time,
             slot_duration_minutes=request.slot_duration_minutes,
@@ -473,7 +508,7 @@ async def update_availability(
 )
 async def add_time_off(
     request: AddTimeOffRequest,
-    current_user: User = Depends(get_current_instructor_allow_inactive),
+    instructor_profile_id: int = Depends(get_current_instructor_profile_id),
     use_case: AddTimeOffUseCase = Depends(get_add_time_off_use_case),
 ) -> TimeOffResponse:
     """Add a time off period."""
@@ -481,7 +516,7 @@ async def add_time_off(
         from app.application.use_cases.scheduling.add_time_off import AddTimeOffInput
 
         input_data = AddTimeOffInput(
-            instructor_id=current_user.id,
+            instructor_id=instructor_profile_id,
             start_at=request.start_at,
             end_at=request.end_at,
             reason=request.reason,
@@ -511,12 +546,12 @@ async def add_time_off(
     description="Get all time off periods for the current instructor.",
 )
 async def get_my_time_off(
-    current_user: User = Depends(get_current_instructor_allow_inactive),
+    instructor_profile_id: int = Depends(get_current_instructor_profile_id),
     time_off_repo: ITimeOffRepository = Depends(get_time_off_repository),
 ) -> TimeOffListResponse:
     """Get all time off for the current instructor."""
     try:
-        time_offs = time_off_repo.get_by_instructor(current_user.id)
+        time_offs = time_off_repo.get_by_instructor(instructor_profile_id)
 
         items = []
         for to in time_offs:
@@ -546,7 +581,7 @@ async def get_my_time_off(
 )
 async def delete_time_off(
     time_off_id: int,
-    current_user: User = Depends(get_current_instructor_allow_inactive),
+    instructor_profile_id: int = Depends(get_current_instructor_profile_id),
     use_case: DeleteTimeOffUseCase = Depends(get_delete_time_off_use_case),
 ) -> MessageResponse:
     """Delete a time off period."""
@@ -555,7 +590,7 @@ async def delete_time_off(
 
         input_data = DeleteTimeOffInput(
             time_off_id=time_off_id,
-            instructor_id=current_user.id,
+            instructor_id=instructor_profile_id,
         )
 
         output = use_case.execute(input_data)
@@ -585,7 +620,7 @@ async def delete_time_off(
 async def get_calendar_view(
     start_date: str = Query(..., description="Start date in YYYY-MM-DD format"),
     end_date: str = Query(..., description="End date in YYYY-MM-DD format"),
-    current_user: User = Depends(get_current_instructor_allow_inactive),
+    instructor_profile_id: int = Depends(get_current_instructor_profile_id),
     use_case: GetCalendarViewUseCase = Depends(get_get_calendar_view_use_case),
 ) -> CalendarViewResponse:
     """Get calendar view for date range."""
@@ -593,7 +628,7 @@ async def get_calendar_view(
         from app.application.use_cases.scheduling.get_calendar_view import GetCalendarViewInput
 
         input_data = GetCalendarViewInput(
-            instructor_id=current_user.id,
+            instructor_id=instructor_profile_id,
             start_date=start_date,
             end_date=end_date,
         )
@@ -624,6 +659,76 @@ async def get_calendar_view(
             end_date=output.end_date,
             instructor_id=output.instructor_id,
             days=days,
+        )
+
+    except ValueError as e:
+        handle_domain_exception(e)
+    except Exception as e:
+        handle_domain_exception(e)
+
+
+@router.get(
+    "/booking-slots/{instructor_id}",
+    response_model=AvailableBookingSlotsResponse,
+    summary="Get Available Booking Slots",
+    description="Get available booking slots for an instructor. Optimized for student booking flow - returns a flat list of available slots including both one-time and recurring availability.",
+)
+async def get_available_booking_slots(
+    instructor_id: int,
+    start_date: str = Query(..., description="Start date in YYYY-MM-DD format"),
+    end_date: str = Query(..., description="End date in YYYY-MM-DD format"),
+    use_case: GetAvailableBookingSlotsUseCase = Depends(get_available_booking_slots_use_case),
+) -> AvailableBookingSlotsResponse:
+    """
+    Get available booking slots for an instructor.
+
+    This endpoint returns a flat list of available slots optimized for the
+    student booking flow. It combines:
+    - One-time availability slots from the booking_slots table
+    - Dynamically generated slots from recurring availability rules
+
+    All slots are filtered to exclude:
+    - Slots in the past
+    - Slots that are already booked
+    - Slots blocked by time-off periods
+
+    This provides a unified view of all available slots for booking,
+    regardless of whether they come from one-time or recurring availability.
+    """
+    try:
+        from app.application.use_cases.scheduling.get_available_booking_slots import (
+            GetAvailableBookingSlotsInput,
+        )
+
+        input_data = GetAvailableBookingSlotsInput(
+            instructor_id=instructor_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        output = use_case.execute(input_data)
+
+        # Convert to response format
+        slots = [
+            BookingSlotItem(
+                id=slot.id,
+                instructor_id=slot.instructor_id,
+                start_at=slot.start_at,
+                end_at=slot.end_at,
+                duration_minutes=slot.duration_minutes,
+                status=slot.status,
+                availability_rule_id=slot.availability_rule_id,
+                is_recurring=slot.is_recurring,
+            )
+            for slot in output.slots
+        ]
+
+        return AvailableBookingSlotsResponse(
+            instructor_id=instructor_id,
+            start_date=start_date,
+            end_date=end_date,
+            slots=slots,
+            total=output.total,
         )
 
     except ValueError as e:
@@ -703,7 +808,7 @@ async def get_public_calendar_view(
 async def update_slot(
     slot_id: int,
     request: UpdateSlotRequest,
-    current_user: User = Depends(get_current_instructor_allow_inactive),
+    instructor_profile_id: int = Depends(get_current_instructor_profile_id),
     use_case: UpdateSlotUseCase = Depends(get_update_slot_use_case),
 ) -> SlotResponse:
     """Update (resize) an individual slot."""
@@ -712,7 +817,7 @@ async def update_slot(
 
         input_data = UpdateSlotInput(
             slot_id=slot_id,
-            instructor_id=current_user.id,
+            instructor_id=instructor_profile_id,
             start_at=request.start_at,
             end_at=request.end_at,
         )
@@ -743,7 +848,7 @@ async def update_slot(
 )
 async def delete_slot(
     slot_id: int,
-    current_user: User = Depends(get_current_instructor_allow_inactive),
+    instructor_profile_id: int = Depends(get_current_instructor_profile_id),
     use_case: DeleteSlotUseCase = Depends(get_delete_slot_use_case),
 ) -> MessageResponse:
     """Delete an individual slot."""
@@ -752,7 +857,7 @@ async def delete_slot(
 
         input_data = DeleteSlotInput(
             slot_id=slot_id,
-            instructor_id=current_user.id,
+            instructor_id=instructor_profile_id,
         )
 
         output = use_case.execute(input_data)

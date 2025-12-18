@@ -94,7 +94,7 @@ const NextSessionCard: React.FC<NextSessionCardProps> = ({ session }) => {
     return () => clearInterval(interval);
   }, []);
 
-  const timeRemaining = getTimeRemaining(session.scheduled_at);
+  const timeRemaining = getTimeRemaining(session.start_at);
 
   return (
     <Card
@@ -153,8 +153,8 @@ const NextSessionCard: React.FC<NextSessionCardProps> = ({ session }) => {
                 {session.student_name}
               </h3>
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-sm font-medium text-gray-500">
-                  {session.subject}
+                <span className="text-sm font-medium text-gray-500 capitalize">
+                  {session.session_type} lesson
                 </span>
                 {session.is_trial && (
                   <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full">
@@ -177,14 +177,14 @@ const NextSessionCard: React.FC<NextSessionCardProps> = ({ session }) => {
           <div className="flex-grow">
             <div className="flex items-baseline gap-2">
               <span className="text-5xl lg:text-6xl font-extrabold text-gray-900 tabular-nums">
-                {formatSessionTime(session.scheduled_at).split(' ')[0]}
+                {formatSessionTime(session.start_at).split(' ')[0]}
               </span>
               <span className="text-2xl font-medium text-gray-400">
-                {formatSessionTime(session.scheduled_at).split(' ')[1]}
+                {formatSessionTime(session.start_at).split(' ')[1]}
               </span>
               <span className="text-2xl text-gray-300 mx-2">–</span>
               <span className="text-2xl font-medium text-gray-500">
-                {formatEndTime(session.scheduled_at, session.duration_minutes)}
+                {formatEndTime(session.start_at, session.duration_minutes)}
               </span>
             </div>
             <div className="flex items-center gap-3 mt-3">
@@ -236,7 +236,7 @@ const NextSessionCard: React.FC<NextSessionCardProps> = ({ session }) => {
               <div className="text-center">
                 <Calendar size={36} className="text-primary-400 mx-auto mb-1" />
                 <div className="text-xs font-bold text-gray-400">
-                  {new Date(session.scheduled_at).toLocaleDateString('en-US', { weekday: 'short' })}
+                  {new Date(session.start_at).toLocaleDateString('en-US', { weekday: 'short' })}
                 </div>
               </div>
             </div>
@@ -328,7 +328,7 @@ const UpNextItem: React.FC<UpNextItemProps> = ({ session, index }) => {
           {session.student_name}
         </h4>
         <p className="text-sm text-gray-500">
-          {formatRelativeDate(session.scheduled_at)}, {formatSessionTime(session.scheduled_at)} – {formatEndTime(session.scheduled_at, session.duration_minutes)}
+          {formatRelativeDate(session.start_at)}, {formatSessionTime(session.start_at)} – {formatEndTime(session.start_at, session.duration_minutes)}
         </p>
       </div>
 
@@ -523,7 +523,7 @@ const InstructorHome: React.FC = () => {
   // Count today's sessions
   const today = new Date().toDateString();
   const todaySessions = upcomingSessions.filter(
-    (s) => new Date(s.scheduled_at).toDateString() === today
+    (s) => new Date(s.start_at).toDateString() === today
   ).length;
 
   return (

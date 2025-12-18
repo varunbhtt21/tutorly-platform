@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.database.connection import get_db
 from app.core.security import decode_token, get_password_hash, verify_password
+from app.core.config import settings
 
 # Domain repository interfaces
 from app.domains.user.repositories import IUserRepository
@@ -95,6 +96,7 @@ from app.application.use_cases.scheduling import (
     DeleteTimeOffUseCase,
     UpdateSlotUseCase,
     DeleteSlotUseCase,
+    GetAvailableBookingSlotsUseCase,
 )
 from app.application.use_cases.booking import (
     InitiateBookingUseCase,
@@ -168,30 +170,45 @@ def get_payment_gateway() -> IPaymentGateway:
     """
     Get Payment gateway implementation.
 
-    Uses environment variables for configuration:
-    - RAZORPAY_KEY_ID
-    - RAZORPAY_KEY_SECRET
-    - USE_MOCK_GATEWAY (for testing)
+    Uses centralized settings configuration:
+    - settings.RAZORPAY_KEY_ID
+    - settings.RAZORPAY_KEY_SECRET
+    - settings.USE_MOCK_GATEWAY (for testing)
     """
-    import os
-
-    use_mock = os.getenv("USE_MOCK_GATEWAY", "false").lower() == "true"
-
-    if use_mock:
+    if settings.USE_MOCK_GATEWAY:
         return MockGateway()
 
-    key_id = os.getenv("RAZORPAY_KEY_ID", "")
-    key_secret = os.getenv("RAZORPAY_KEY_SECRET", "")
-
-    if not key_id or not key_secret:
-        # Fall back to mock for development
+    if not settings.RAZORPAY_KEY_ID or not settings.RAZORPAY_KEY_SECRET:
+        # Fall back to mock for development if credentials not configured
         return MockGateway()
 
     return RazorpayGateway(
-        key_id=key_id,
-        key_secret=key_secret,
+        key_id=settings.RAZORPAY_KEY_ID,
+        key_secret=settings.RAZORPAY_KEY_SECRET,
         business_name="Tutorly",
     )
+
+
+# Scheduling Repository Dependencies
+
+def get_availability_repository(db: Session = Depends(get_db)) -> IAvailabilityRepository:
+    """Get Availability repository implementation."""
+    return AvailabilityRepositoryImpl(db)
+
+
+def get_session_repository(db: Session = Depends(get_db)) -> ISessionRepository:
+    """Get Session repository implementation."""
+    return SessionRepositoryImpl(db)
+
+
+def get_time_off_repository(db: Session = Depends(get_db)) -> ITimeOffRepository:
+    """Get TimeOff repository implementation."""
+    return TimeOffRepositoryImpl(db)
+
+
+def get_booking_slot_repository(db: Session = Depends(get_db)) -> IBookingSlotRepository:
+    """Get BookingSlot repository implementation."""
+    return BookingSlotRepositoryImpl(db)
 
 
 # ============================================================================
@@ -233,9 +250,10 @@ def get_update_user_profile_use_case(
 
 def get_create_instructor_profile_use_case(
     instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+    wallet_repo: IWalletRepository = Depends(get_wallet_repository),
 ) -> CreateInstructorProfileUseCase:
     """Get CreateInstructorProfile use case."""
-    return CreateInstructorProfileUseCase(instructor_repo)
+    return CreateInstructorProfileUseCase(instructor_repo, wallet_repo)
 
 
 def get_update_instructor_about_use_case(
@@ -290,9 +308,10 @@ def get_add_experience_use_case(
 def get_instructor_dashboard_use_case(
     instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
     wallet_repo: IWalletRepository = Depends(get_wallet_repository),
+    session_repo: ISessionRepository = Depends(get_session_repository),
 ) -> GetInstructorDashboardUseCase:
-    """Get GetInstructorDashboard use case with wallet integration."""
-    return GetInstructorDashboardUseCase(instructor_repo, wallet_repo)
+    """Get GetInstructorDashboard use case with wallet and session integration."""
+    return GetInstructorDashboardUseCase(instructor_repo, wallet_repo, session_repo)
 
 
 # Student Use Cases
@@ -346,28 +365,6 @@ def get_list_user_files_use_case(
 ) -> ListUserFilesUseCase:
     """Get ListUserFiles use case."""
     return ListUserFilesUseCase(file_repo)
-
-
-# Scheduling Repository Dependencies
-
-def get_availability_repository(db: Session = Depends(get_db)) -> IAvailabilityRepository:
-    """Get Availability repository implementation."""
-    return AvailabilityRepositoryImpl(db)
-
-
-def get_session_repository(db: Session = Depends(get_db)) -> ISessionRepository:
-    """Get Session repository implementation."""
-    return SessionRepositoryImpl(db)
-
-
-def get_time_off_repository(db: Session = Depends(get_db)) -> ITimeOffRepository:
-    """Get TimeOff repository implementation."""
-    return TimeOffRepositoryImpl(db)
-
-
-def get_booking_slot_repository(db: Session = Depends(get_db)) -> IBookingSlotRepository:
-    """Get BookingSlot repository implementation."""
-    return BookingSlotRepositoryImpl(db)
 
 
 # Scheduling Use Cases
@@ -433,6 +430,23 @@ def get_delete_slot_use_case(
 ) -> DeleteSlotUseCase:
     """Get DeleteSlot use case with availability cleanup."""
     return DeleteSlotUseCase(booking_slot_repo, availability_repo)
+
+
+def get_available_booking_slots_use_case(
+    availability_repo: IAvailabilityRepository = Depends(get_availability_repository),
+    session_repo: ISessionRepository = Depends(get_session_repository),
+    time_off_repo: ITimeOffRepository = Depends(get_time_off_repository),
+    booking_slot_repo: IBookingSlotRepository = Depends(get_booking_slot_repository),
+) -> GetAvailableBookingSlotsUseCase:
+    """
+    Get GetAvailableBookingSlots use case.
+
+    This use case combines one-time and recurring availability slots,
+    filtering out booked sessions and time-off periods.
+    """
+    return GetAvailableBookingSlotsUseCase(
+        availability_repo, session_repo, time_off_repo, booking_slot_repo
+    )
 
 
 # ============================================================================
@@ -646,6 +660,28 @@ async def get_current_instructor_allow_inactive(
             detail="Instructor access required",
         )
     return current_user
+
+
+async def get_current_instructor_profile_id(
+    current_user: User = Depends(get_current_instructor_allow_inactive),
+    instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+) -> int:
+    """
+    Get the current instructor's profile ID (not user ID).
+
+    Use this dependency when you need the instructor_profile.id for scheduling,
+    availability, booking slots, and other operations that reference instructor profiles.
+
+    Raises:
+        HTTPException: If instructor profile not found
+    """
+    profile = instructor_repo.get_by_user_id(current_user.id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Instructor profile not found. Please complete onboarding.",
+        )
+    return profile.id
 
 
 async def get_current_student(

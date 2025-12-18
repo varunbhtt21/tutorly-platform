@@ -51,7 +51,7 @@ const SessionCard: React.FC<SessionCardProps> = ({ session, index }) => {
     return { dayText, timeText, isToday, isTomorrow };
   };
 
-  const { dayText, timeText, isToday, isTomorrow } = formatDateTime(session.scheduled_at);
+  const { dayText, timeText, isToday, isTomorrow } = formatDateTime(session.start_at);
 
   return (
     <div
@@ -141,11 +141,11 @@ const SessionCard: React.FC<SessionCardProps> = ({ session, index }) => {
         </div>
       </div>
 
-      {/* Subject tag */}
+      {/* Session type tag */}
       <div className="hidden sm:block">
         <span
           className={`
-            text-xs font-medium px-3 py-1.5 rounded-lg
+            text-xs font-medium px-3 py-1.5 rounded-lg capitalize
             transition-all duration-300
             ${isHovered
               ? 'bg-primary-100 text-primary-700'
@@ -153,7 +153,7 @@ const SessionCard: React.FC<SessionCardProps> = ({ session, index }) => {
             }
           `}
         >
-          {session.subject}
+          {session.session_type}
         </span>
       </div>
 

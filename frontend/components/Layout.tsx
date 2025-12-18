@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useUnreadCount } from '../context/UnreadCountContext';
 import { Button } from './UIComponents';
 import {
   Menu,
@@ -216,13 +217,14 @@ const UserMenu: React.FC<UserMenuProps> = ({ user, onLogout }) => {
   );
 };
 
-// Notification bell with badge
+// Notification bell with badge - connected to real unread count
 const NotificationBell: React.FC = () => {
   const [isHovered, setIsHovered] = useState(false);
-  const hasNotifications = false; // TODO: Connect to real notifications
+  const { unreadCount } = useUnreadCount();
 
   return (
-    <button
+    <Link
+      to="/messages"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       className={`
@@ -237,10 +239,14 @@ const NotificationBell: React.FC = () => {
           ${isHovered ? 'text-primary-600 scale-110' : ''}
         `}
       />
-      {hasNotifications && (
-        <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white animate-pulse" />
+      {unreadCount > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-red-500 rounded-full border-2 border-white flex items-center justify-center">
+          <span className="text-[10px] font-bold text-white">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        </span>
       )}
-    </button>
+    </Link>
   );
 };
 

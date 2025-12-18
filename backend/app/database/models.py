@@ -7,6 +7,7 @@ In Pure DDD, these live in the infrastructure layer and are mapped to domain ent
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Type
 from sqlalchemy import (
     Column, Integer, String, DateTime, Boolean, Text, Numeric,
     ForeignKey, Enum as SQLEnum, Table
@@ -15,6 +16,30 @@ from sqlalchemy.orm import relationship
 import enum
 
 from app.database.connection import Base
+
+
+# ============================================================================
+# Helper function to create Enum columns that store VALUES not NAMES
+# ============================================================================
+
+def ValueEnum(enum_class: Type[enum.Enum]):
+    """
+    Create a SQLAlchemy Enum that stores enum VALUES instead of NAMES.
+
+    By default, SQLAlchemy stores enum member names (e.g., 'INSTRUCTOR').
+    This helper ensures values are stored (e.g., 'instructor'), which is
+    the standard convention and matches our domain layer expectations.
+
+    Args:
+        enum_class: The Python Enum class to use
+
+    Returns:
+        SQLAlchemy Enum configured to store values
+    """
+    return SQLEnum(
+        enum_class,
+        values_callable=lambda x: [e.value for e in x]
+    )
 
 
 # ============================================================================
@@ -153,8 +178,8 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
-    role = Column(SQLEnum(UserRole), nullable=False)
-    status = Column(SQLEnum(UserStatus), nullable=False, default=UserStatus.PENDING_VERIFICATION)
+    role = Column(ValueEnum(UserRole), nullable=False)
+    status = Column(ValueEnum(UserStatus), nullable=False, default=UserStatus.PENDING_VERIFICATION)
 
     # Profile information
     first_name = Column(String(100), nullable=False)
@@ -197,7 +222,7 @@ class InstructorProfile(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
-    status = Column(SQLEnum(InstructorStatus), nullable=False, default=InstructorStatus.DRAFT)
+    status = Column(ValueEnum(InstructorStatus), nullable=False, default=InstructorStatus.DRAFT)
 
     # About section (Step 1)
     country_of_birth = Column(String(100), nullable=True)
@@ -343,7 +368,7 @@ class InstructorSubject(Base):
 
     # Proficiency and experience with this subject
     years_of_experience = Column(Integer, nullable=True)
-    proficiency_level = Column(SQLEnum(ProficiencyLevel), nullable=True)
+    proficiency_level = Column(ValueEnum(ProficiencyLevel), nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -364,7 +389,7 @@ class UploadedFile(Base):
     student_id = Column(Integer, ForeignKey("student_profiles.id", ondelete="SET NULL"), nullable=True)
 
     # File metadata
-    file_type = Column(SQLEnum(FileType), nullable=False)
+    file_type = Column(ValueEnum(FileType), nullable=False)
     file_path = Column(String(500), nullable=False)
     original_filename = Column(String(255), nullable=False)
     stored_filename = Column(String(500), nullable=False)
@@ -373,7 +398,7 @@ class UploadedFile(Base):
     storage_backend = Column(String(50), nullable=False, default="local")
 
     # Status and processing
-    status = Column(SQLEnum(FileStatus), nullable=False, default=FileStatus.UPLOADING)
+    status = Column(ValueEnum(FileStatus), nullable=False, default=FileStatus.UPLOADING)
     is_optimized = Column(Boolean, nullable=False, default=False)
 
     # URLs
@@ -616,8 +641,8 @@ class Message(Base):
 
     # Message content
     content = Column(Text, nullable=True)  # Nullable for attachment-only messages
-    message_type = Column(SQLEnum(MessageType), nullable=False, default=MessageType.TEXT)
-    status = Column(SQLEnum(MessageStatus), nullable=False, default=MessageStatus.SENT)
+    message_type = Column(ValueEnum(MessageType), nullable=False, default=MessageType.TEXT)
+    status = Column(ValueEnum(MessageStatus), nullable=False, default=MessageStatus.SENT)
 
     # Reply to another message (optional)
     reply_to_id = Column(
@@ -729,7 +754,7 @@ class Wallet(Base):
 
     # Settings
     currency = Column(String(3), nullable=False, default="INR")
-    status = Column(SQLEnum(WalletStatus), nullable=False, default=WalletStatus.ACTIVE)
+    status = Column(ValueEnum(WalletStatus), nullable=False, default=WalletStatus.ACTIVE)
 
     # Timestamps
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -754,10 +779,10 @@ class WalletTransaction(Base):
     )
 
     # Transaction details
-    type = Column(SQLEnum(TransactionType), nullable=False)
+    type = Column(ValueEnum(TransactionType), nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)
     balance_after = Column(Numeric(12, 2), nullable=False)
-    status = Column(SQLEnum(TransactionStatus), nullable=False, default=TransactionStatus.PENDING)
+    status = Column(ValueEnum(TransactionStatus), nullable=False, default=TransactionStatus.PENDING)
 
     # Reference to source (session, withdrawal request, etc.)
     reference_type = Column(String(50), nullable=True)  # 'session', 'withdrawal', 'refund', 'manual'
@@ -822,12 +847,12 @@ class Payment(Base):
     # Payment details
     amount = Column(Numeric(12, 2), nullable=False)
     currency = Column(String(3), nullable=False, default="INR")
-    status = Column(SQLEnum(PaymentStatus), nullable=False, default=PaymentStatus.PENDING)
-    lesson_type = Column(SQLEnum(LessonType), nullable=False, default=LessonType.TRIAL)
+    status = Column(ValueEnum(PaymentStatus), nullable=False, default=PaymentStatus.PENDING)
+    lesson_type = Column(ValueEnum(LessonType), nullable=False, default=LessonType.TRIAL)
 
     # Payment method
-    payment_method = Column(SQLEnum(PaymentMethod), nullable=True)
-    gateway = Column(SQLEnum(PaymentGateway), nullable=False, default=PaymentGateway.RAZORPAY)
+    payment_method = Column(ValueEnum(PaymentMethod), nullable=True)
+    gateway = Column(ValueEnum(PaymentGateway), nullable=False, default=PaymentGateway.RAZORPAY)
 
     # Gateway references
     gateway_order_id = Column(String(100), nullable=True, unique=True, index=True)

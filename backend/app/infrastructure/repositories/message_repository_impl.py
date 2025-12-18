@@ -70,14 +70,37 @@ class SQLAlchemyMessageRepository(IMessageRepository):
         skip: int = 0,
         limit: int = 50,
     ) -> List[Message]:
-        """Get messages for a conversation."""
+        """
+        Get messages for a conversation in chronological order.
+
+        Messages are returned oldest-first (ascending by created_at),
+        which is the natural order for chat display where oldest
+        messages appear at the top and newest at the bottom.
+
+        For "load more" functionality, increase skip to get older messages.
+        """
         try:
+            # Count total messages to calculate offset from the end
+            total_count = self.db.query(SQLAlchemyMessage).filter(
+                SQLAlchemyMessage.conversation_id == conversation_id,
+                SQLAlchemyMessage.deleted_at.is_(None)
+            ).count()
+
+            # Calculate offset to get the latest 'limit' messages
+            # When skip=0, we want the most recent messages
+            # When skip>0, we want older messages (for "load more")
+            effective_offset = max(0, total_count - limit - skip)
+            effective_limit = min(limit, total_count - skip) if skip < total_count else 0
+
+            if effective_limit <= 0:
+                return []
+
             db_messages = self.db.query(SQLAlchemyMessage).filter(
                 SQLAlchemyMessage.conversation_id == conversation_id,
                 SQLAlchemyMessage.deleted_at.is_(None)
             ).order_by(
-                desc(SQLAlchemyMessage.created_at)
-            ).offset(skip).limit(limit).all()
+                SQLAlchemyMessage.created_at.asc()  # Chronological order: oldest first
+            ).offset(effective_offset).limit(effective_limit).all()
 
             return [self.mapper.to_domain(m) for m in db_messages]
 

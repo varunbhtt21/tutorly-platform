@@ -157,3 +157,24 @@ class IBookingSlotRepository(ABC):
             True if overlap exists
         """
         pass
+
+    @abstractmethod
+    def get_by_instructor_and_time(
+        self,
+        instructor_id: int,
+        start_at: datetime,
+    ) -> Optional[BookingSlot]:
+        """
+        Get a booking slot by instructor and exact start time.
+
+        Used to check if a slot already exists for a specific time
+        (e.g., when creating slots from recurring availability).
+
+        Args:
+            instructor_id: ID of the instructor
+            start_at: Exact start datetime
+
+        Returns:
+            BookingSlot if found, None otherwise
+        """
+        pass

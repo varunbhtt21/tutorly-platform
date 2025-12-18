@@ -1,12 +1,14 @@
 """Use case for getting instructor dashboard data."""
 
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, List, Set
 
 from app.domains.instructor.entities import InstructorProfile, InstructorDashboard
 from app.domains.instructor.repositories import IInstructorProfileRepository
 from app.domains.instructor.value_objects import DashboardStats
 from app.domains.wallet.repositories import IWalletRepository
+from app.domains.scheduling.repositories import ISessionRepository
+from app.domains.scheduling.value_objects import SessionStatus
 
 
 class GetInstructorDashboardUseCase:
@@ -21,6 +23,7 @@ class GetInstructorDashboardUseCase:
         self,
         instructor_repo: IInstructorProfileRepository,
         wallet_repo: Optional[IWalletRepository] = None,
+        session_repo: Optional[ISessionRepository] = None,
     ):
         """
         Initialize GetInstructorDashboardUseCase.
@@ -28,9 +31,11 @@ class GetInstructorDashboardUseCase:
         Args:
             instructor_repo: Repository for instructor profile persistence
             wallet_repo: Optional wallet repository for earnings data
+            session_repo: Optional session repository for upcoming sessions
         """
         self.instructor_repo = instructor_repo
         self.wallet_repo = wallet_repo
+        self.session_repo = session_repo
 
     def execute(self, user_id: int) -> InstructorDashboard:
         """
@@ -62,21 +67,39 @@ class GetInstructorDashboardUseCase:
             if wallet:
                 total_earnings = wallet.total_earned
 
-        # 4. Build stats (uses existing profile data + wallet earnings)
+        # 4. Fetch upcoming sessions and calculate stats from session repository
+        upcoming_sessions = []
+        upcoming_sessions_count = 0
+        total_students = 0
+
+        if self.session_repo:
+            # Get upcoming sessions for this instructor (by instructor profile id)
+            upcoming_sessions = self.session_repo.get_upcoming_by_instructor(
+                instructor_id=profile.id,
+                limit=10
+            )
+            upcoming_sessions_count = len(upcoming_sessions)
+
+            # Calculate unique students from all sessions (not just upcoming)
+            all_sessions = self.session_repo.get_by_instructor(instructor_id=profile.id)
+            unique_students: Set[int] = {s.student_id for s in all_sessions}
+            total_students = len(unique_students)
+
+        # 5. Build stats (uses existing profile data + wallet earnings + session data)
         stats = DashboardStats(
-            upcoming_sessions_count=0,  # Placeholder until session system
-            total_students=0,  # Placeholder until booking system
+            upcoming_sessions_count=upcoming_sessions_count,
+            total_students=total_students,
             completed_sessions=profile.total_sessions_completed,
             total_earnings=total_earnings,
             profile_completion_percent=completion,
         )
 
-        # 5. Return dashboard aggregate
+        # 6. Return dashboard aggregate
         return InstructorDashboard(
             profile=profile,
             user=user,
             stats=stats,
-            upcoming_sessions=[],  # Placeholder until session system
+            upcoming_sessions=upcoming_sessions,
         )
 
     def _calculate_profile_completion(self, profile: InstructorProfile) -> int:

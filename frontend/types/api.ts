@@ -342,11 +342,16 @@ export interface UserBasicInfo {
 
 export interface UpcomingSession {
   id: number;
+  student_id: number;
   student_name: string;
-  scheduled_at: string;
+  start_at: string;
+  end_at: string;
   duration_minutes: number;
-  subject: string;
+  session_type: string;
+  status: string;
   is_trial: boolean;
+  amount: number;
+  currency: string;
 }
 
 export interface InstructorDashboardResponse {
@@ -490,6 +495,27 @@ export interface CalendarViewResponse {
 export interface CalendarMessageResponse {
   message: string;
   success: boolean;
+}
+
+// Booking Slots Types (for student booking flow)
+
+export interface BookingSlotItem {
+  id: number | null; // null for dynamically generated recurring slots
+  instructor_id: number;
+  start_at: string; // ISO datetime format
+  end_at: string; // ISO datetime format
+  duration_minutes: number;
+  status: string; // Should be 'available' for booking
+  availability_rule_id?: number | null;
+  is_recurring?: boolean; // true if generated from recurring rule
+}
+
+export interface AvailableBookingSlotsResponse {
+  instructor_id: number;
+  start_date: string;
+  end_date: string;
+  slots: BookingSlotItem[];
+  total: number;
 }
 
 // ============================================================================

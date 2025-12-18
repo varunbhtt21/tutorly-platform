@@ -13,6 +13,7 @@ import { Card } from '../components/UIComponents';
 import { ConversationList, ChatWindow } from '../components/messaging';
 import { useWebSocket } from '../context/WebSocketContext';
 import { useAuth } from '../context/AuthContext';
+import { useUnreadCount } from '../context/UnreadCountContext';
 import { messagingAPI } from '../services';
 import type { Conversation, Message } from '../types/api';
 
@@ -23,6 +24,7 @@ const Messages: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { refreshCount } = useUnreadCount();
   const {
     connect,
     disconnect,
@@ -112,7 +114,9 @@ const Messages: React.FC = () => {
     setSelectedConversation(conversation);
     setSearchParams({ conversation: conversation.id.toString() });
     setIsMobileViewingChat(true);
-  }, [setSearchParams]);
+    // Refresh unread count after a short delay to allow mark-as-read to complete
+    setTimeout(() => refreshCount(), 1000);
+  }, [setSearchParams, refreshCount]);
 
   // Handle going back (mobile)
   const handleBack = useCallback(() => {

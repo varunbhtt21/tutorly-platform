@@ -4,6 +4,7 @@ import { Toaster } from 'sonner';
 import { QueryProvider } from './context/QueryProvider';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { WebSocketProvider } from './context/WebSocketContext';
+import { UnreadCountProvider } from './context/UnreadCountContext';
 import Layout from './components/Layout';
 import Home from './pages/Home';
 import Login from './pages/Login';
@@ -121,16 +122,18 @@ const App = () => {
     <QueryProvider>
       <AuthProvider>
         <WebSocketProvider>
-          <Router>
-            <AppContent />
-            <Toaster
-              position="top-right"
-              richColors
-              closeButton
-              expand={false}
-              duration={4000}
-            />
-          </Router>
+          <UnreadCountProvider>
+            <Router>
+              <AppContent />
+              <Toaster
+                position="top-right"
+                richColors
+                closeButton
+                expand={false}
+                duration={4000}
+              />
+            </Router>
+          </UnreadCountProvider>
         </WebSocketProvider>
       </AuthProvider>
     </QueryProvider>

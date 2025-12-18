@@ -198,3 +198,18 @@ class BookingSlotRepositoryImpl(IBookingSlotRepository):
             end_date=end_date,
             status="available"
         )
+
+    def get_by_instructor_and_time(
+        self,
+        instructor_id: int,
+        start_at: datetime,
+    ) -> Optional[BookingSlot]:
+        """Get a booking slot by instructor and exact start time."""
+        db_model = self.db.query(BookingSlotModel).filter(
+            BookingSlotModel.instructor_id == instructor_id,
+            BookingSlotModel.start_at == start_at,
+        ).first()
+
+        if db_model:
+            return self.mapper.to_domain(db_model)
+        return None

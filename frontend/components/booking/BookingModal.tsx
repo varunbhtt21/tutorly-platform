@@ -5,18 +5,10 @@
 
 import React, { useState } from 'react';
 import { X, ArrowLeft } from 'lucide-react';
-import SlotSelector from './SlotSelector';
+import SlotSelector, { getSlotKey, type Slot } from './SlotSelector';
 import BookingCheckout from './BookingCheckout';
 import BookingConfirmation from './BookingConfirmation';
 import { getMediaUrl } from '../../lib/axios';
-
-interface Slot {
-  id: number;
-  start_at: string;
-  end_at: string;
-  duration_minutes: number;
-  status: string;
-}
 
 type BookingStep = 'select_slot' | 'checkout' | 'confirmation';
 
@@ -173,7 +165,7 @@ const BookingModal: React.FC<BookingModalProps> = ({
               <SlotSelector
                 instructorId={instructorId}
                 onSlotSelect={handleSlotSelect}
-                selectedSlotId={selectedSlot?.id}
+                selectedSlotKey={selectedSlot ? getSlotKey(selectedSlot) : undefined}
               />
             </div>
           )}

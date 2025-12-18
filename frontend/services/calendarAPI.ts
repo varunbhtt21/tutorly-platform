@@ -21,6 +21,7 @@ import type {
   CalendarViewResponse,
   CalendarMessageResponse,
   SlotResponse,
+  AvailableBookingSlotsResponse,
 } from '../types/api';
 
 // ============================================================================
@@ -146,6 +147,25 @@ export const calendarAPI = {
   ): Promise<CalendarViewResponse> {
     const response = await apiClient.get<CalendarViewResponse>(
       `/calendar/view/public/${instructorId}`,
+      {
+        params: { start_date: startDate, end_date: endDate },
+      }
+    );
+    return response.data;
+  },
+
+  /**
+   * Get available booking slots for an instructor
+   * Optimized for student booking flow - returns a flat list of available slots
+   * This is the proper endpoint for booking functionality
+   */
+  async getAvailableBookingSlots(
+    instructorId: number,
+    startDate: string,
+    endDate: string
+  ): Promise<AvailableBookingSlotsResponse> {
+    const response = await apiClient.get<AvailableBookingSlotsResponse>(
+      `/calendar/booking-slots/${instructorId}`,
       {
         params: { start_date: startDate, end_date: endDate },
       }
