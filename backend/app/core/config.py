@@ -69,10 +69,21 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     GOOGLE_REDIRECT_URI: str = ""
 
+    # Video Provider Selection
+    # Options: "daily", "hundredms", "mock"
+    # Set to switch between video providers without code changes
+    VIDEO_PROVIDER: str = "daily"
+    USE_MOCK_VIDEO_PROVIDER: bool = False  # Set True for development without API key
+
     # Daily.co Video Provider
     DAILY_API_KEY: str = ""
     DAILY_DOMAIN: str = "tutorly.daily.co"
-    USE_MOCK_VIDEO_PROVIDER: bool = False  # Set True for development without API key
+
+    # 100ms Video Provider
+    # Get credentials from: https://dashboard.100ms.live/
+    HMS_ACCESS_KEY: str = ""
+    HMS_APP_SECRET: str = ""
+    HMS_TEMPLATE_ID: str = ""  # Optional: Default template for rooms
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

@@ -54,6 +54,7 @@ class JoinClassroomResponseModel(BaseModel):
     """Response with meeting token for joining."""
     room_url: str
     token: str
+    room_id: str  # Provider-specific room ID (needed for 100ms SDK)
     room_name: str
     participant_name: str
     participant_role: str
@@ -164,6 +165,7 @@ async def join_classroom(
         return JoinClassroomResponseModel(
             room_url=result.room_url,
             token=result.token,
+            room_id=result.room_id,
             room_name=result.room_name,
             participant_name=result.participant_name,
             participant_role=result.participant_role,

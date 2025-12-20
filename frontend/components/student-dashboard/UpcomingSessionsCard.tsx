@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Card, Button, Badge } from '../UIComponents';
 import { UpcomingSession } from '../../services/studentAPI';
+import { formatSessionDateTime } from '../../lib/datetime';
 
 interface UpcomingSessionsCardProps {
   sessions: UpcomingSession[];
@@ -46,40 +47,11 @@ const SessionItem: React.FC<SessionItemProps> = ({
   const [showActions, setShowActions] = useState(false);
   const navigate = useNavigate();
 
-  const formatDateTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    let dayText = '';
-    let isToday = false;
-    let isTomorrow = false;
-
-    if (date.toDateString() === today.toDateString()) {
-      dayText = 'Today';
-      isToday = true;
-    } else if (date.toDateString() === tomorrow.toDateString()) {
-      dayText = 'Tomorrow';
-      isTomorrow = true;
-    } else {
-      dayText = date.toLocaleDateString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-      });
-    }
-
-    const timeText = date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-
-    return { dayText, timeText, isToday, isTomorrow };
-  };
-
-  const { dayText, timeText, isToday, isTomorrow } = formatDateTime(session.start_at);
+  // Use timezone-aware formatting with the session's stored timezone
+  const { dayText, timeText, isToday, isTomorrow } = formatSessionDateTime(
+    session.start_at,
+    session.timezone
+  );
 
   const handleJoinMeeting = () => {
     // Navigate to the classroom page for video session

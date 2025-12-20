@@ -56,7 +56,11 @@ from app.infrastructure.repositories.payment_repository_impl import PaymentRepos
 from app.infrastructure.payment_gateways.razorpay_gateway import RazorpayGateway
 from app.infrastructure.payment_gateways.mock_gateway import MockGateway
 from app.infrastructure.repositories.classroom_repository_impl import ClassroomRepositoryImpl
-from app.infrastructure.video_providers import DailyVideoProvider, MockVideoProvider
+from app.infrastructure.video_providers import (
+    DailyVideoProvider,
+    HundredMsVideoProvider,
+    MockVideoProvider,
+)
 
 # Domain entities
 from app.domains.user.entities import User
@@ -79,6 +83,7 @@ from app.application.use_cases.instructor import (
     AddEducationUseCase,
     AddExperienceUseCase,
     GetInstructorDashboardUseCase,
+    GetInstructorPublicProfileUseCase,
 )
 from app.application.use_cases.student import (
     CreateStudentProfileUseCase,
@@ -321,6 +326,18 @@ def get_instructor_dashboard_use_case(
 ) -> GetInstructorDashboardUseCase:
     """Get GetInstructorDashboard use case with wallet and session integration."""
     return GetInstructorDashboardUseCase(instructor_repo, wallet_repo, session_repo)
+
+
+def get_instructor_public_profile_use_case(
+    instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+) -> GetInstructorPublicProfileUseCase:
+    """
+    Get GetInstructorPublicProfile use case.
+
+    This use case retrieves instructor profile data along with user information
+    (first_name, last_name) for public profile display.
+    """
+    return GetInstructorPublicProfileUseCase(instructor_repo)
 
 
 # Student Use Cases
@@ -803,14 +820,40 @@ def get_classroom_repository(db: Session = Depends(get_db)) -> IClassroomReposit
 
 def get_video_provider() -> IVideoProvider:
     """
-    Get Video provider implementation.
+    Get Video provider implementation based on configuration.
 
-    Uses Daily.co by default, falls back to mock for development.
-    To switch providers: replace DailyVideoProvider with another implementation.
+    Provider Selection (via VIDEO_PROVIDER env var):
+    - "daily": Uses Daily.co (default)
+    - "hundredms": Uses 100ms
+    - "mock": Uses mock provider for testing
+
+    Falls back to mock if credentials are not configured.
+
+    Architecture Note:
+        All providers implement the same IVideoProvider interface,
+        making them interchangeable without application code changes.
+        To add a new provider (e.g., Jitsi):
+        1. Create JitsiVideoProvider implementing IVideoProvider
+        2. Add configuration settings
+        3. Add case here for provider selection
     """
-    if settings.USE_MOCK_VIDEO_PROVIDER:
+    # Explicit mock mode
+    if settings.USE_MOCK_VIDEO_PROVIDER or settings.VIDEO_PROVIDER == "mock":
         return MockVideoProvider()
 
+    # 100ms provider
+    if settings.VIDEO_PROVIDER == "hundredms":
+        if not settings.HMS_ACCESS_KEY or not settings.HMS_APP_SECRET:
+            # Fall back to mock if credentials not configured
+            return MockVideoProvider()
+
+        return HundredMsVideoProvider(
+            access_key=settings.HMS_ACCESS_KEY,
+            app_secret=settings.HMS_APP_SECRET,
+            template_id=settings.HMS_TEMPLATE_ID or None,
+        )
+
+    # Daily.co provider (default)
     if not settings.DAILY_API_KEY:
         # Fall back to mock for development if credentials not configured
         return MockVideoProvider()
@@ -859,6 +902,8 @@ def get_join_classroom_use_case(
     classroom_repo: IClassroomRepository = Depends(get_classroom_repository),
     user_repo: IUserRepository = Depends(get_user_repository),
     video_provider: IVideoProvider = Depends(get_video_provider),
+    instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+    student_repo: IStudentProfileRepository = Depends(get_student_repository),
 ) -> JoinClassroomUseCase:
     """
     Get JoinClassroom use case.
@@ -867,13 +912,16 @@ def get_join_classroom_use_case(
     - Create-on-join pattern (auto-create classrooms)
     - Room lifecycle management (detect/recreate expired rooms)
 
-    The use case is thin and delegates room management to the domain service.
+    The use case resolves user_id to profile IDs for authorization,
+    since sessions store profile IDs (not user IDs).
     """
     return JoinClassroomUseCase(
         classroom_service=classroom_service,
         classroom_repo=classroom_repo,
         user_repo=user_repo,
         video_provider=video_provider,
+        instructor_repo=instructor_repo,
+        student_repo=student_repo,
     )
 
 

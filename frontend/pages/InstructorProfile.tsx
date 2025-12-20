@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -7,6 +7,7 @@ import { Button, Badge, Card } from '../components/UIComponents';
 import { PlayCircle, MessageSquare, Check, Loader2 } from 'lucide-react';
 import { getMediaUrl } from '../lib/axios';
 import { BookingModal } from '../components/booking';
+import { ScheduleSection } from '../components/instructor';
 import { useAuth } from '../context/AuthContext';
 
 const InstructorProfile = () => {
@@ -15,6 +16,11 @@ const InstructorProfile = () => {
   const { user, isAuthenticated } = useAuth();
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+
+  // Handle slot selection from schedule - opens booking modal
+  const handleSlotSelect = () => {
+    setShowBookingModal(true);
+  };
 
   // Fetch instructor profile with React Query
   const { data: instructor, isLoading: loading, isError } = useQuery({
@@ -90,8 +96,11 @@ const InstructorProfile = () => {
                 <div className="flex-grow w-full">
                   <div className="flex justify-between items-start">
                     <div>
-                      {/* TODO: Fetch user information separately - backend doesn't include user in profile response */}
-                      <h1 className="text-3xl font-bold text-gray-900 mb-2">Instructor #{instructor.id}</h1>
+                      <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                        {instructor.first_name
+                          ? `${instructor.first_name}${instructor.last_name ? ` ${instructor.last_name.charAt(0)}.` : ''}`
+                          : `Instructor #${instructor.id}`}
+                      </h1>
                       <p className="text-lg text-primary-600 font-medium mb-3">{instructor.headline || 'Professional Tutor'}</p>
                     </div>
                     {/* TODO: Rating/Review system not yet implemented in backend */}
@@ -120,31 +129,41 @@ const InstructorProfile = () => {
               <p className="text-gray-600 leading-relaxed whitespace-pre-line text-lg">{instructor.bio}</p>
             </Card>
 
-            {/* Introduction Video */}
+            {/* Schedule Section */}
             <Card className="p-8">
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Introduction Video</h2>
-              {instructor.intro_video_url ? (
-                <video
-                  src={getMediaUrl(instructor.intro_video_url)}
-                  controls
-                  className="w-full aspect-video rounded-2xl bg-gray-900 shadow-inner"
-                  poster={getMediaUrl(instructor.profile_photo_url)}
-                />
-              ) : (
-                <div className="aspect-video bg-gray-900 rounded-2xl flex flex-col items-center justify-center text-white relative overflow-hidden group cursor-pointer shadow-inner">
-                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors"></div>
-                  <div className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center relative z-10 group-hover:scale-110 transition-transform duration-300 border border-white/30">
-                      <PlayCircle size={40} className="text-white fill-white/20" />
-                  </div>
-                  <p className="relative z-10 mt-4 font-medium text-white/90">Video introduction coming soon</p>
-                </div>
-              )}
+              <ScheduleSection
+                instructorId={instructor.id}
+                onSlotSelect={handleSlotSelect}
+                showFullScheduleLink={true}
+              />
             </Card>
           </div>
 
-          {/* Right Column - Booking Card */}
+          {/* Right Column - Video & Booking Card */}
           <div className="lg:w-1/3">
-            <div className="sticky top-28">
+            <div className="sticky top-28 space-y-6">
+              {/* Introduction Video */}
+              <Card className="p-6 overflow-hidden">
+                <h2 className="text-lg font-bold text-gray-900 mb-4">Introduction Video</h2>
+                {instructor.intro_video_url ? (
+                  <video
+                    src={getMediaUrl(instructor.intro_video_url)}
+                    controls
+                    className="w-full aspect-video rounded-xl bg-gray-900 shadow-inner"
+                    poster={getMediaUrl(instructor.profile_photo_url)}
+                  />
+                ) : (
+                  <div className="aspect-video bg-gray-900 rounded-xl flex flex-col items-center justify-center text-white relative overflow-hidden group cursor-pointer shadow-inner">
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors"></div>
+                    <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center relative z-10 group-hover:scale-110 transition-transform duration-300 border border-white/30">
+                        <PlayCircle size={32} className="text-white fill-white/20" />
+                    </div>
+                    <p className="relative z-10 mt-3 font-medium text-white/90 text-sm">Video coming soon</p>
+                  </div>
+                )}
+              </Card>
+
+              {/* Trial Lesson Price & Booking Card */}
               <Card className="p-8 border-t-8 border-t-primary-500 shadow-2xl shadow-primary-900/5">
                 <div className="text-center mb-8">
                   <p className="text-gray-500 font-medium mb-2 text-sm uppercase tracking-wider">Trial Lesson Price</p>
@@ -196,7 +215,7 @@ const InstructorProfile = () => {
         isOpen={showBookingModal}
         onClose={() => setShowBookingModal(false)}
         instructorId={instructor.id}
-        instructorName={`Instructor #${instructor.id}`}
+        instructorName={instructor.first_name || `Instructor #${instructor.id}`}
         instructorPhoto={instructor.profile_photo_url}
         trialPrice={parseFloat(instructor.trial_lesson_price?.toString() || instructor.hourly_rate?.toString() || '0')}
         hourlyRate={parseFloat(instructor.hourly_rate?.toString() || '0')}

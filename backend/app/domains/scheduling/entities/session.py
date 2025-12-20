@@ -106,6 +106,38 @@ class Session:
         # Allow reschedule up to 24 hours before
         return datetime.utcnow() < self.start_at - timedelta(hours=24)
 
+    @property
+    def can_be_joined(self) -> bool:
+        """
+        Check if session can be joined.
+
+        A session can be joined when:
+        1. Session is CONFIRMED or IN_PROGRESS (active sessions)
+        2. Current time is within the join window:
+           - From 15 minutes before start time (early entry allowed)
+           - Until the scheduled end time of the session
+
+        Students can join and wait in the classroom regardless of whether
+        the instructor has joined yet. The "Enter Classroom" button remains
+        available throughout the session duration.
+
+        This encapsulates the business rule for join eligibility,
+        following the same pattern as can_be_cancelled and can_be_rescheduled.
+        """
+        now = datetime.utcnow()
+
+        # Only confirmed or in-progress sessions can be joined
+        if self.status not in (SessionStatus.CONFIRMED, SessionStatus.IN_PROGRESS):
+            return False
+
+        # Calculate time window
+        time_to_session_minutes = (self.start_at - now).total_seconds() / 60
+
+        # Allow join from 15 minutes before start until session end time
+        # -15 means 15 mins before (negative because start_at is in future)
+        # duration_minutes is the max time after start (session end)
+        return -15 <= time_to_session_minutes <= self.duration_minutes
+
     def confirm(self):
         """Confirm the session."""
         if self.status != SessionStatus.PENDING_CONFIRMATION:

@@ -27,11 +27,12 @@ export interface CreateClassroomResponse {
 export interface JoinClassroomResponse {
   room_url: string;
   token: string;
+  room_id: string;  // Provider-specific room ID (needed for 100ms SDK)
   room_name: string;
   participant_name: string;
   participant_role: 'instructor' | 'student';
   expires_at: string;
-  provider: string;
+  provider: 'daily' | 'hundredms' | 'mock';
 }
 
 export interface EndClassroomResponse {

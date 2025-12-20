@@ -33,9 +33,10 @@ class ClassroomSessionModel(Base):
     student_id = Column(Integer, nullable=False, index=True)
 
     # Video room info
+    room_id = Column(String(255), nullable=True)  # Provider-specific room ID (required for 100ms SDK)
     room_name = Column(String(255), nullable=False, unique=True, index=True)
     room_url = Column(String(500), nullable=False)
-    provider = Column(String(50), nullable=False)  # "daily", "twilio", etc.
+    provider = Column(String(50), nullable=False)  # "hundredms", "daily", "twilio", etc.
 
     # Status
     status = Column(String(20), nullable=False, default="created")

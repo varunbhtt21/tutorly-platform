@@ -15,6 +15,7 @@ from app.domains.scheduling.value_objects import SessionStatus
 from app.domains.payment.repositories import IPaymentRepository
 from app.domains.payment.value_objects.enums import PaymentStatus
 from app.domains.instructor.repositories import IInstructorProfileRepository
+from app.domains.student.repositories import IStudentProfileRepository
 from app.domains.user.repositories import IUserRepository
 
 
@@ -137,6 +138,7 @@ class GetStudentDashboardUseCase:
         session_repo: ISessionRepository,
         payment_repo: IPaymentRepository,
         instructor_repo: IInstructorProfileRepository,
+        student_repo: IStudentProfileRepository,
         user_repo: IUserRepository,
     ):
         """
@@ -146,37 +148,68 @@ class GetStudentDashboardUseCase:
             session_repo: Session repository for booking data
             payment_repo: Payment repository for transaction data
             instructor_repo: Instructor repository for instructor data
+            student_repo: Student profile repository for resolving user_id to profile_id
             user_repo: User repository for user details
         """
         self.session_repo = session_repo
         self.payment_repo = payment_repo
         self.instructor_repo = instructor_repo
+        self.student_repo = student_repo
         self.user_repo = user_repo
 
-    def execute(self, student_id: int) -> StudentDashboardOutput:
+    def _resolve_student_profile_id(self, user_id: int) -> int:
+        """
+        Resolve a user_id to their student_profile_id.
+
+        Sessions store profile IDs (student_profile.id), not user IDs.
+        This method bridges the gap between the authentication context
+        (user_id) and the domain context (student_profile_id).
+
+        Args:
+            user_id: The user's ID from authentication
+
+        Returns:
+            The student_profile.id for this user
+
+        Raises:
+            ValueError: If user has no student profile
+        """
+        student_profile = self.student_repo.get_by_user_id(user_id)
+        if not student_profile:
+            raise ValueError(f"No student profile found for user {user_id}")
+        return student_profile.id
+
+    def execute(self, user_id: int) -> StudentDashboardOutput:
         """
         Execute the use case to get complete dashboard data.
 
         Args:
-            student_id: The student's user ID
+            user_id: The student's user ID (from authentication)
 
         Returns:
             StudentDashboardOutput with all dashboard sections populated
+
+        Raises:
+            ValueError: If user has no student profile
         """
+        # Resolve user_id to student_profile_id
+        # Sessions store profile IDs, not user IDs
+        student_profile_id = self._resolve_student_profile_id(user_id)
+
         # Get upcoming sessions (next 7 days)
-        upcoming_sessions = self._get_upcoming_sessions(student_id)
+        upcoming_sessions = self._get_upcoming_sessions(student_profile_id)
 
         # Get student statistics
-        stats = self._get_student_stats(student_id)
+        stats = self._get_student_stats(student_profile_id)
 
         # Get instructors the student has booked with
-        my_instructors = self._get_my_instructors(student_id)
+        my_instructors = self._get_my_instructors(student_profile_id)
 
         # Get session history (past sessions)
-        session_history = self._get_session_history(student_id)
+        session_history = self._get_session_history(student_profile_id)
 
-        # Get payment history
-        payment_history = self._get_payment_history(student_id)
+        # Get payment history (uses user_id, not profile_id)
+        payment_history = self._get_payment_history(user_id)
 
         return StudentDashboardOutput(
             upcoming_sessions=upcoming_sessions,
@@ -204,9 +237,8 @@ class GetStudentDashboardUseCase:
             if not instructor:
                 continue
 
-            # Check if can join (within 5 mins of start)
-            time_to_session = (session.start_at - now).total_seconds() / 60
-            can_join = -5 <= time_to_session <= session.duration_minutes
+            # Use the domain entity's business rule for join eligibility
+            can_join = session.can_be_joined
 
             upcoming.append(UpcomingSessionDTO(
                 session_id=session.id,

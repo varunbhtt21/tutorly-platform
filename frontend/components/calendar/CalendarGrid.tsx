@@ -8,11 +8,18 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Clock, Check, Trash2 } from 'lucide-react';
 import type { CalendarDay, CalendarSlot } from '../../types/api';
 import { formatTime, getSlotStatusColor, isSlotInPast } from '../../services/calendarAPI';
+import { calculatePopoverPositionInContainer, type BoundingRect } from '../../lib/popover-positioning';
 
 // Constants for grid layout
 const HOUR_HEIGHT = 60; // pixels per hour
 const DEFAULT_START_HOUR = 0; // 12 AM (midnight)
 const DEFAULT_END_HOUR = 24; // 12 AM next day (full 24-hour view)
+
+// Popover dimensions for smart positioning
+const POPOVER_DIMENSIONS = {
+  width: 288,  // w-72 = 18rem = 288px
+  height: 280, // Approximate height of the popover content
+};
 
 // Duration snapping configuration
 const DURATION_INCREMENT = 30; // Snap to 30-minute increments
@@ -299,8 +306,22 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
 
     const gridRect = gridRef.current?.getBoundingClientRect();
     if (gridRect) {
-      const popoverLeft = Math.min(e.clientX - gridRect.left + 10, gridRect.width - 280);
-      const popoverTop = Math.min(e.clientY - gridRect.top + 10, gridRect.height - 200);
+      // Use smart positioning utility to handle edge cases (bottom overflow, etc.)
+      const containerBounds: BoundingRect = {
+        top: gridRect.top,
+        left: gridRect.left,
+        right: gridRect.right,
+        bottom: gridRect.bottom,
+        width: gridRect.width,
+        height: gridRect.height,
+      };
+
+      const position = calculatePopoverPositionInContainer(
+        { x: e.clientX, y: e.clientY },
+        POPOVER_DIMENSIONS,
+        containerBounds,
+        { preferredPlacement: 'bottom', alignment: 'start', margin: 10 }
+      );
 
       setPopover({
         isOpen: true,
@@ -308,7 +329,7 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
         date: selection.startDay,
         startHour: minHour,
         endHour: maxHour + 1,
-        position: { top: Math.max(0, popoverTop), left: Math.max(0, popoverLeft) },
+        position: { top: position.top, left: position.left },
       });
     }
 
@@ -333,8 +354,22 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
 
     const gridRect = gridRef.current?.getBoundingClientRect();
     if (gridRect) {
-      const popoverLeft = Math.min(e.clientX - gridRect.left + 10, gridRect.width - 280);
-      const popoverTop = Math.min(e.clientY - gridRect.top + 10, gridRect.height - 200);
+      // Use smart positioning utility to handle edge cases (bottom overflow, etc.)
+      const containerBounds: BoundingRect = {
+        top: gridRect.top,
+        left: gridRect.left,
+        right: gridRect.right,
+        bottom: gridRect.bottom,
+        width: gridRect.width,
+        height: gridRect.height,
+      };
+
+      const position = calculatePopoverPositionInContainer(
+        { x: e.clientX, y: e.clientY },
+        POPOVER_DIMENSIONS,
+        containerBounds,
+        { preferredPlacement: 'bottom', alignment: 'start', margin: 10 }
+      );
 
       setPopover({
         isOpen: true,
@@ -342,7 +377,7 @@ export const CalendarGrid: React.FC<CalendarGridProps> = ({
         date: day.date,
         startHour: parseTimeFromISO(slot.start_at).hours,
         endHour: parseTimeFromISO(slot.end_at).hours,
-        position: { top: Math.max(0, popoverTop), left: Math.max(0, popoverLeft) },
+        position: { top: position.top, left: position.left },
         availabilityId: slot.availability_id ?? undefined,
         slotId: slot.slot_id ?? undefined,
         slotInfo: slot,

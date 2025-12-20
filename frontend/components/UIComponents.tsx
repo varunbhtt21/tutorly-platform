@@ -77,7 +77,7 @@ export const Card: React.FC<CardProps> = ({ children, className = '', ...props }
 );
 
 // --- Badge ---
-export const Badge: React.FC<{ children: React.ReactNode; variant?: 'primary' | 'secondary' | 'neutral' | 'outline' }> = ({ children, variant = 'primary' }) => {
+export const Badge: React.FC<{ children: React.ReactNode; variant?: 'primary' | 'secondary' | 'neutral' | 'outline'; className?: string }> = ({ children, variant = 'primary', className = '' }) => {
   const styles = {
     primary: "bg-primary-100/80 text-primary-700 border border-primary-200/50 backdrop-blur-sm",
     secondary: "bg-sky-100/80 text-sky-700 border border-sky-200/50 backdrop-blur-sm",
@@ -85,7 +85,7 @@ export const Badge: React.FC<{ children: React.ReactNode; variant?: 'primary' | 
     outline: "border border-gray-300 text-gray-600 bg-transparent"
   };
   return (
-    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${styles[variant]}`}>
+    <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${styles[variant]} ${className}`}>
       {children}
     </span>
   );

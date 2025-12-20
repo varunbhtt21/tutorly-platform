@@ -9,7 +9,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Type
 from sqlalchemy import (
-    Column, Integer, String, DateTime, Boolean, Text, Numeric,
+    Column, Integer, String, DateTime, Boolean, Text, Numeric, Float, JSON,
     ForeignKey, Enum as SQLEnum, Table
 )
 from sqlalchemy.orm import relationship
@@ -271,16 +271,30 @@ class InstructorProfile(Base):
 
 
 class StudentProfile(Base):
-    """Student profile ORM model."""
+    """
+    Student profile ORM model.
+
+    Maps to the StudentProfile domain entity. Fields must match domain entity
+    to ensure proper persistence through the StudentProfileMapper.
+    """
 
     __tablename__ = "student_profiles"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
 
-    # Student preferences
+    # Profile Information (matches domain entity)
+    profile_photo_url = Column(String(500), nullable=True)
     learning_goals = Column(Text, nullable=True)
-    preferred_learning_style = Column(String(50), nullable=True)
+    preferred_language = Column(String(50), nullable=True)
+
+    # Preferences (matches domain entity)
+    notification_preferences = Column(JSON, nullable=True)
+    preferred_session_duration = Column(Integer, default=50)
+
+    # Statistics (matches domain entity)
+    total_sessions_completed = Column(Integer, default=0)
+    total_spent = Column(Float, default=0.0)
 
     # Timestamps
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

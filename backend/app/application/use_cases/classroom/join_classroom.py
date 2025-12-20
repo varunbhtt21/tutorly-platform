@@ -23,6 +23,8 @@ from app.domains.classroom.services import (
 from app.domains.classroom.repositories import IClassroomRepository
 from app.domains.classroom.value_objects import RoomStatus
 from app.domains.user.repositories import IUserRepository
+from app.domains.instructor.repositories import IInstructorProfileRepository
+from app.domains.student.repositories import IStudentProfileRepository
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,7 @@ class JoinClassroomResponse:
     """Response with meeting token and room details."""
     room_url: str
     token: str
+    room_id: str  # Provider-specific room ID (needed for 100ms SDK)
     room_name: str
     participant_name: str
     participant_role: str
@@ -66,6 +69,8 @@ class JoinClassroomUseCase:
         classroom_repo: IClassroomRepository,
         user_repo: IUserRepository,
         video_provider: IVideoProvider,
+        instructor_repo: IInstructorProfileRepository,
+        student_repo: IStudentProfileRepository,
     ):
         """
         Initialize the use case.
@@ -75,11 +80,37 @@ class JoinClassroomUseCase:
             classroom_repo: Repository for classroom persistence
             user_repo: Repository for user data
             video_provider: Adapter for meeting token generation
+            instructor_repo: Repository for instructor profiles (to resolve user_id → instructor_profile_id)
+            student_repo: Repository for student profiles (to resolve user_id → student_profile_id)
         """
         self.classroom_service = classroom_service
         self.classroom_repo = classroom_repo
         self.user_repo = user_repo
         self.video_provider = video_provider
+        self.instructor_repo = instructor_repo
+        self.student_repo = student_repo
+
+    def _resolve_user_profile_ids(self, user_id: int) -> tuple[int | None, int | None]:
+        """
+        Resolve a user_id to their instructor and/or student profile IDs.
+
+        Sessions store profile IDs (instructor_profile.id, student_profile.id),
+        not user IDs. This method bridges that gap for authorization.
+
+        Args:
+            user_id: The user's ID from authentication
+
+        Returns:
+            Tuple of (instructor_profile_id, student_profile_id)
+            Either may be None if user doesn't have that profile type.
+        """
+        instructor_profile = self.instructor_repo.get_by_user_id(user_id)
+        student_profile = self.student_repo.get_by_user_id(user_id)
+
+        instructor_profile_id = instructor_profile.id if instructor_profile else None
+        student_profile_id = student_profile.id if student_profile else None
+
+        return instructor_profile_id, student_profile_id
 
     def execute(self, request: JoinClassroomRequest) -> JoinClassroomResponse:
         """
@@ -88,9 +119,10 @@ class JoinClassroomUseCase:
         The ClassroomService handles:
         - Creating classroom if it doesn't exist (create-on-join)
         - Recreating expired video rooms transparently
-        - User authorization
+        - User authorization (via profile IDs)
 
         This use case handles:
+        - Resolving user_id to profile IDs for authorization
         - Token generation
         - Classroom status updates
         - Response formatting
@@ -106,11 +138,17 @@ class JoinClassroomUseCase:
             TokenCreationError: If token generation fails
             RoomCreationError: If room creation fails
         """
+        # Resolve user_id to profile IDs for authorization
+        # Sessions store profile IDs, not user IDs
+        instructor_profile_id, student_profile_id = self._resolve_user_profile_ids(request.user_id)
+
         # Get or create classroom with valid video room
         # ClassroomService handles authorization and room lifecycle
         classroom = self.classroom_service.get_or_create_classroom(
             session_id=request.session_id,
             user_id=request.user_id,
+            instructor_profile_id=instructor_profile_id,
+            student_profile_id=student_profile_id,
         )
 
         # Verify classroom is joinable
@@ -124,8 +162,9 @@ class JoinClassroomUseCase:
 
         participant_name = f"{user.first_name} {user.last_name}"
 
-        # Determine role
-        if classroom.is_instructor(request.user_id):
+        # Determine role based on profile IDs
+        # The classroom stores profile IDs, not user IDs
+        if instructor_profile_id and classroom.is_instructor(instructor_profile_id):
             role = ParticipantRole.INSTRUCTOR
         else:
             role = ParticipantRole.STUDENT
@@ -153,6 +192,7 @@ class JoinClassroomUseCase:
         return JoinClassroomResponse(
             room_url=token_info.room_url,
             token=token_info.token,
+            room_id=classroom.room_id,  # Provider-specific room ID
             room_name=classroom.room_name,
             participant_name=participant_name,
             participant_role=role.value,

@@ -33,6 +33,7 @@ from app.core.dependencies import (
     get_add_experience_use_case,
     get_instructor_repository,
     get_instructor_dashboard_use_case,
+    get_instructor_public_profile_use_case,
     get_user_repository,
 )
 from app.domains.user.repositories import IUserRepository
@@ -46,6 +47,7 @@ from app.application.use_cases.instructor import (
     AddEducationUseCase,
     AddExperienceUseCase,
     GetInstructorDashboardUseCase,
+    GetInstructorPublicProfileUseCase,
 )
 from app.domains.instructor.entities import InstructorDashboard
 from app.domains.instructor.value_objects import DashboardStats
@@ -259,6 +261,8 @@ class InstructorProfileResponse(BaseModel):
     """Complete instructor profile response."""
     id: int
     user_id: int
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     status: InstructorStatus
     country_of_birth: Optional[str]
     languages: List[LanguageResponse]
@@ -275,7 +279,14 @@ class InstructorProfileResponse(BaseModel):
     experience: List[ExperienceResponse]
 
     @classmethod
-    def from_domain(cls, profile: InstructorProfile, education: List[Education] = None, experience: List[Experience] = None) -> "InstructorProfileResponse":
+    def from_domain(
+        cls,
+        profile: InstructorProfile,
+        education: List[Education] = None,
+        experience: List[Experience] = None,
+        first_name: Optional[str] = None,
+        last_name: Optional[str] = None,
+    ) -> "InstructorProfileResponse":
         """Create response from domain entity."""
         # Parse languages
         languages = []
@@ -301,6 +312,8 @@ class InstructorProfileResponse(BaseModel):
         return cls(
             id=profile.id,
             user_id=profile.user_id,
+            first_name=first_name,
+            last_name=last_name,
             status=profile.status,
             country_of_birth=profile.country_of_birth,
             languages=languages,
@@ -423,6 +436,7 @@ class UpcomingSessionResponse(BaseModel):
     session_type: str
     status: str
     is_trial: bool
+    is_in_progress: bool  # True if session has started but not ended
     amount: Decimal
     currency: str
 
@@ -850,7 +864,7 @@ async def get_my_profile(
 )
 async def get_instructor_profile(
     instructor_id: int,
-    instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+    use_case: GetInstructorPublicProfileUseCase = Depends(get_instructor_public_profile_use_case),
     current_user: Optional[User] = Depends(get_optional_current_user),
 ) -> InstructorProfileResponse:
     """
@@ -860,24 +874,42 @@ async def get_instructor_profile(
     Authenticated users can see more details.
     """
     try:
-        # Get profile
-        profile = instructor_repo.get_by_id(instructor_id)
-        if not profile:
-            raise ValueError(f"Instructor profile {instructor_id} not found")
+        # Execute use case to get profile with user data
+        profile_dto = use_case.execute(
+            instructor_id=instructor_id,
+            requesting_user_id=current_user.id if current_user else None,
+        )
 
-        # Only show verified profiles to public
-        if not current_user and profile.status != InstructorStatus.VERIFIED:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Instructor profile not found",
-            )
+        # Convert DTO to response model
+        return InstructorProfileResponse(
+            id=profile_dto.id,
+            user_id=profile_dto.user_id,
+            first_name=profile_dto.first_name,
+            last_name=profile_dto.last_name,
+            status=profile_dto.status,
+            country_of_birth=profile_dto.country_of_birth,
+            languages=[
+                LanguageResponse(language=lang.language, proficiency=lang.proficiency)
+                for lang in profile_dto.languages
+            ],
+            profile_photo_url=profile_dto.profile_photo_url,
+            bio=profile_dto.bio,
+            teaching_experience=profile_dto.teaching_experience,
+            headline=profile_dto.headline,
+            intro_video_url=profile_dto.intro_video_url,
+            hourly_rate=profile_dto.hourly_rate,
+            trial_lesson_price=profile_dto.trial_lesson_price,
+            onboarding_step=profile_dto.onboarding_step,
+            is_onboarding_complete=profile_dto.is_onboarding_complete,
+            education=[],  # TODO: Add education via use case
+            experience=[],  # TODO: Add experience via use case
+        )
 
-        # Get related entities
-        education = []
-        experience = []
-
-        return InstructorProfileResponse.from_domain(profile, education, experience)
-
+    except PermissionError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Instructor profile not found",
+        )
     except ValueError as e:
         handle_domain_exception(e)
     except Exception as e:
@@ -926,6 +958,8 @@ async def get_instructor_dashboard(
                 student_cache[student_id] = "Unknown Student"
 
         # Build upcoming sessions response with student names
+        from app.utils.datetime_utils import is_in_progress
+
         upcoming_sessions = [
             UpcomingSessionResponse(
                 id=session.id,
@@ -937,6 +971,7 @@ async def get_instructor_dashboard(
                 session_type=session.session_type.value,
                 status=session.status.value,
                 is_trial=session.is_trial,
+                is_in_progress=is_in_progress(session.start_at, session.end_at),
                 amount=session.amount,
                 currency=session.currency,
             )

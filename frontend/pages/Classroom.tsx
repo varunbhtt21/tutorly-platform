@@ -1,38 +1,46 @@
 /**
  * Classroom Page
  *
- * Video classroom for tutoring sessions.
- * Embeds Daily.co video call via iframe for reliability and simplicity.
+ * Video classroom for tutoring sessions with 100ms video and Tutorly chat.
+ *
+ * Architecture:
+ * - Uses 100ms React SDK for video (no iframe)
+ * - Integrates Tutorly's existing chat system on right sidebar
+ * - Auto-joins with user name from AuthContext (no name prompt)
+ * - Supports both Daily.co (iframe) and 100ms (SDK) providers
  *
  * Flow:
  * 1. User navigates to /classroom/:sessionId
- * 2. Page calls joinClassroom API to get room URL with auth token
- * 3. Daily.co iframe is rendered with the authenticated URL
- * 4. Instructor can end the session via EndClassroom API
+ * 2. Page calls joinClassroom API to get room credentials
+ * 3. If provider is "hundredms", uses 100ms SDK with native components
+ * 4. If provider is "daily", falls back to iframe approach
+ * 5. Chat sidebar shows Tutorly messaging with the other participant
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
-import { classroomAPI } from '../services';
+import { HMSProvider, useHMS } from '../context/HMSContext';
+import { useConversation } from '../hooks/useConversation';
+import { classroomAPI, messagingAPI } from '../services';
+import { VideoGrid, VideoControls } from '../components/video';
+import { ChatWindow } from '../components/messaging/ChatWindow';
 import { Button, Card } from '../components/UIComponents';
 import {
   Video,
-  VideoOff,
-  Mic,
-  MicOff,
-  PhoneOff,
-  Users,
-  Clock,
-  AlertCircle,
+  MessageCircle,
   Loader2,
+  AlertCircle,
   ArrowLeft,
   Maximize2,
   Minimize2,
+  Clock,
+  X,
 } from 'lucide-react';
 import type { JoinClassroomResponse } from '../services/classroomAPI';
+import type { Conversation, Message } from '../types/api';
 
 // ============================================================================
 // Types
@@ -72,9 +80,9 @@ const SessionTimer: React.FC<SessionTimerProps> = ({ startTime }) => {
   const formatTime = (val: number) => val.toString().padStart(2, '0');
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2 bg-gray-900/50 rounded-xl">
-      <Clock size={16} className="text-gray-400" />
-      <span className="font-mono text-white tabular-nums">
+    <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-800/80 rounded-lg">
+      <Clock size={14} className="text-gray-400" />
+      <span className="font-mono text-sm text-white tabular-nums">
         {hours > 0 && `${formatTime(hours)}:`}
         {formatTime(minutes)}:{formatTime(seconds)}
       </span>
@@ -83,124 +91,437 @@ const SessionTimer: React.FC<SessionTimerProps> = ({ startTime }) => {
 };
 
 // ============================================================================
-// Video Container Component
+// 100ms Video Classroom Component
 // ============================================================================
 
-interface VideoContainerProps {
-  roomUrl: string;
-  onLoad?: () => void;
-  onError?: () => void;
+interface HMSClassroomContentProps {
+  roomData: JoinClassroomResponse;
+  sessionId: number;
+  isInstructor: boolean;
+  sessionStartTime: Date;
+  onEndSession: () => void;
+  onLeave: () => void;
+  isEnding: boolean;
+  conversation: Conversation | null;
+  messages: Message[];
+  isLoadingMessages: boolean;
+  onSendMessage: (content: string, replyToId?: number) => void;
+  isChatConnected: boolean;
+  isParticipantOnline: boolean;
 }
 
-const VideoContainer: React.FC<VideoContainerProps> = ({ roomUrl, onLoad, onError }) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [isLoading, setIsLoading] = useState(true);
+const HMSClassroomContent: React.FC<HMSClassroomContentProps> = ({
+  roomData,
+  sessionId,
+  isInstructor,
+  sessionStartTime,
+  onEndSession,
+  onLeave,
+  isEnding,
+  conversation,
+  messages,
+  isLoadingMessages,
+  onSendMessage,
+  isChatConnected,
+  isParticipantOnline,
+}) => {
+  const { joinRoom, leaveRoom, isConnected, isConnecting, error } = useHMS();
+  const [showChat, setShowChat] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const hasJoined = useRef(false);
 
-  const handleLoad = useCallback(() => {
-    setIsLoading(false);
-    onLoad?.();
-  }, [onLoad]);
+  // Auto-join room on mount using auth token from backend
+  useEffect(() => {
+    if (!hasJoined.current && roomData.token && roomData.participant_name) {
+      hasJoined.current = true;
+      joinRoom(roomData.token, roomData.participant_name).catch((err) => {
+        console.error('Failed to join room:', err);
+        toast.error('Failed to join video room. Please try again.');
+      });
+    }
+  }, [roomData.token, roomData.participant_name, joinRoom]);
 
-  const handleError = useCallback(() => {
-    setIsLoading(false);
-    onError?.();
-  }, [onError]);
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (isConnected) {
+        leaveRoom();
+      }
+    };
+  }, [isConnected, leaveRoom]);
+
+  // Handle fullscreen toggle
+  const toggleFullscreen = useCallback(() => {
+    if (!containerRef.current) return;
+
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch((err) => {
+        console.error('Fullscreen error:', err);
+      });
+    } else {
+      document.exitFullscreen().then(() => {
+        setIsFullscreen(false);
+      });
+    }
+  }, []);
+
+  // Handle fullscreen change events
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  // Handle session end/leave
+  const handleEndOrLeave = useCallback(async () => {
+    if (isInstructor) {
+      if (window.confirm('Are you sure you want to end this session? This action cannot be undone.')) {
+        await leaveRoom();
+        onEndSession();
+      }
+    } else {
+      if (window.confirm('Are you sure you want to leave the classroom?')) {
+        await leaveRoom();
+        onLeave();
+      }
+    }
+  }, [isInstructor, leaveRoom, onEndSession, onLeave]);
+
+  // Show connection error
+  if (error) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-gray-900 p-4">
+        <Card className="max-w-md w-full p-8 text-center bg-gray-800 border-gray-700">
+          <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-red-500/20 flex items-center justify-center">
+            <AlertCircle className="w-8 h-8 text-red-400" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Connection Error</h2>
+          <p className="text-gray-400 mb-6">{error}</p>
+          <Button
+            variant="primary"
+            onClick={() => {
+              hasJoined.current = false;
+              joinRoom(roomData.token, roomData.participant_name);
+            }}
+          >
+            Try Again
+          </Button>
+        </Card>
+      </div>
+    );
+  }
 
   return (
-    <div className="relative w-full h-full bg-gray-900 rounded-2xl overflow-hidden">
-      {/* Loading overlay */}
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
-          <div className="text-center">
-            <Loader2 className="w-12 h-12 text-primary-500 animate-spin mx-auto mb-4" />
-            <p className="text-gray-400">Connecting to classroom...</p>
+    <div ref={containerRef} className="fixed inset-0 bg-gray-900 flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-800/80 backdrop-blur-sm border-b border-gray-700/50 z-10">
+        <div className="flex items-center gap-4">
+          <Link
+            to={isInstructor ? '/instructor/home' : '/dashboard'}
+            className="p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
+          >
+            <ArrowLeft size={20} className="text-gray-400" />
+          </Link>
+          <div>
+            <h1 className="text-lg font-semibold text-white">Tutoring Session</h1>
+            <p className="text-sm text-gray-400">
+              Room: {roomData.room_name}
+            </p>
           </div>
         </div>
-      )}
 
-      {/* Daily.co iframe */}
-      <iframe
-        ref={iframeRef}
-        src={roomUrl}
-        title="Video Classroom"
-        allow="camera; microphone; fullscreen; display-capture; autoplay"
-        className="w-full h-full border-0"
-        onLoad={handleLoad}
-        onError={handleError}
-      />
+        <div className="flex items-center gap-3">
+          <SessionTimer startTime={sessionStartTime} />
+
+          {/* Live indicator */}
+          {isConnected && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-red-600/20 rounded-lg">
+              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              <span className="text-sm font-medium text-red-400">LIVE</span>
+            </div>
+          )}
+
+          {/* Connecting indicator */}
+          {isConnecting && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-600/20 rounded-lg">
+              <Loader2 size={14} className="text-yellow-400 animate-spin" />
+              <span className="text-sm font-medium text-yellow-400">Connecting...</span>
+            </div>
+          )}
+
+          {/* Chat toggle button */}
+          <button
+            onClick={() => setShowChat(!showChat)}
+            className={`p-2 rounded-lg transition-colors ${
+              showChat ? 'bg-primary-600 text-white' : 'hover:bg-gray-700/50 text-gray-400'
+            }`}
+            title={showChat ? 'Hide chat' : 'Show chat'}
+          >
+            <MessageCircle size={20} />
+          </button>
+
+          {/* Fullscreen toggle */}
+          <button
+            onClick={toggleFullscreen}
+            className="p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
+            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          >
+            {isFullscreen ? (
+              <Minimize2 size={20} className="text-gray-400" />
+            ) : (
+              <Maximize2 size={20} className="text-gray-400" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Main content area */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Video area */}
+        <div className={`flex-1 flex flex-col ${showChat ? 'mr-0' : ''}`}>
+          {/* Video grid */}
+          <div className="flex-1 p-4">
+            <VideoGrid roomName={roomData.room_name} />
+          </div>
+
+          {/* Video controls */}
+          <div className="px-4 pb-4">
+            <VideoControls
+              isInstructor={isInstructor}
+              onEndSession={handleEndOrLeave}
+              onLeave={handleEndOrLeave}
+              isEnding={isEnding}
+            />
+          </div>
+        </div>
+
+        {/* Chat sidebar */}
+        {showChat && (
+          <div className="w-80 lg:w-96 border-l border-gray-700/50 flex flex-col bg-gray-800/50">
+            {/* Chat header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700/50">
+              <div className="flex items-center gap-2">
+                <MessageCircle size={18} className="text-primary-400" />
+                <h2 className="font-semibold text-white">Session Chat</h2>
+                {/* Online status indicator */}
+                {isChatConnected && (
+                  <div className="flex items-center gap-1.5 ml-2">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        isParticipantOnline ? 'bg-green-500' : 'bg-gray-500'
+                      }`}
+                    />
+                    <span className="text-xs text-gray-400">
+                      {isParticipantOnline ? 'Online' : 'Offline'}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setShowChat(false)}
+                className="p-1.5 rounded-lg hover:bg-gray-700/50 transition-colors lg:hidden"
+              >
+                <X size={18} className="text-gray-400" />
+              </button>
+            </div>
+
+            {/* Chat window */}
+            <div className="flex-1 overflow-hidden">
+              {conversation ? (
+                <ChatWindow
+                  conversation={conversation}
+                  messages={messages}
+                  isLoading={isLoadingMessages}
+                  onSendMessage={onSendMessage}
+                />
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                  <MessageCircle size={48} className="text-gray-600 mb-4" />
+                  <p className="text-gray-400 text-sm">
+                    Chat will be available once connected
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
 
 // ============================================================================
-// Control Bar Component
+// Daily.co Iframe Fallback Component
 // ============================================================================
 
-interface ControlBarProps {
+interface DailyClassroomContentProps {
+  roomData: JoinClassroomResponse;
   isInstructor: boolean;
   sessionStartTime: Date;
-  participantName: string;
-  participantRole: string;
   onEndSession: () => void;
   onLeave: () => void;
   isEnding: boolean;
 }
 
-const ControlBar: React.FC<ControlBarProps> = ({
+const DailyClassroomContent: React.FC<DailyClassroomContentProps> = ({
+  roomData,
   isInstructor,
   sessionStartTime,
-  participantName,
-  participantRole,
   onEndSession,
   onLeave,
   isEnding,
 }) => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  const handleLoad = useCallback(() => {
+    setIsLoading(false);
+  }, []);
+
+  const handleError = useCallback(() => {
+    setIsLoading(false);
+    toast.error('Failed to load video. Please try refreshing.');
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!containerRef.current) return;
+
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch((err) => {
+        console.error('Fullscreen error:', err);
+      });
+    } else {
+      document.exitFullscreen().then(() => {
+        setIsFullscreen(false);
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
   return (
-    <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
-      <div className="flex items-center justify-between max-w-4xl mx-auto">
-        {/* Left side - Session info */}
+    <div ref={containerRef} className="fixed inset-0 bg-gray-900 flex flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-800/80 backdrop-blur-sm border-b border-gray-700/50">
         <div className="flex items-center gap-4">
-          <SessionTimer startTime={sessionStartTime} />
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-gray-900/50 rounded-lg">
-            <Users size={14} className="text-gray-400" />
-            <span className="text-sm text-gray-300">{participantName}</span>
-            <span className="text-xs text-gray-500 capitalize">({participantRole})</span>
+          <Link
+            to={isInstructor ? '/instructor/home' : '/dashboard'}
+            className="p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
+          >
+            <ArrowLeft size={20} className="text-gray-400" />
+          </Link>
+          <div>
+            <h1 className="text-lg font-semibold text-white">Tutoring Session</h1>
+            <p className="text-sm text-gray-400">Room: {roomData.room_name}</p>
           </div>
         </div>
 
-        {/* Right side - Actions */}
         <div className="flex items-center gap-3">
-          {isInstructor ? (
-            <Button
-              variant="primary"
-              size="md"
-              onClick={onEndSession}
-              disabled={isEnding}
-              className="!bg-red-600 hover:!bg-red-500 !shadow-red-500/25"
-            >
-              {isEnding ? (
-                <>
-                  <Loader2 size={16} className="animate-spin mr-2" />
-                  Ending...
-                </>
-              ) : (
-                <>
-                  <PhoneOff size={16} className="mr-2" />
-                  End Session
-                </>
-              )}
-            </Button>
-          ) : (
-            <Button
-              variant="secondary"
-              size="md"
-              onClick={onLeave}
-              className="!bg-gray-800 !text-white !border-gray-700 hover:!bg-gray-700"
-            >
-              <ArrowLeft size={16} className="mr-2" />
-              Leave
-            </Button>
+          <SessionTimer startTime={sessionStartTime} />
+
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-red-600/20 rounded-lg">
+            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+            <span className="text-sm font-medium text-red-400">LIVE</span>
+          </div>
+
+          <button
+            onClick={toggleFullscreen}
+            className="p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
+            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          >
+            {isFullscreen ? (
+              <Minimize2 size={20} className="text-gray-400" />
+            ) : (
+              <Maximize2 size={20} className="text-gray-400" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Video container */}
+      <div className="flex-1 relative p-4">
+        <div className="relative w-full h-full bg-gray-900 rounded-2xl overflow-hidden">
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-900 z-10">
+              <div className="text-center">
+                <Loader2 className="w-12 h-12 text-primary-500 animate-spin mx-auto mb-4" />
+                <p className="text-gray-400">Connecting to classroom...</p>
+              </div>
+            </div>
           )}
+
+          <iframe
+            ref={iframeRef}
+            src={roomData.room_url}
+            title="Video Classroom"
+            allow="camera; microphone; fullscreen; display-capture; autoplay"
+            className="w-full h-full border-0"
+            onLoad={handleLoad}
+            onError={handleError}
+          />
+        </div>
+
+        {/* Control bar overlay */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+          <div className="flex items-center justify-end max-w-4xl mx-auto">
+            {isInstructor ? (
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to end this session?')) {
+                    onEndSession();
+                  }
+                }}
+                disabled={isEnding}
+                className="!bg-red-600 hover:!bg-red-500 !shadow-red-500/25"
+              >
+                {isEnding ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin mr-2" />
+                    Ending...
+                  </>
+                ) : (
+                  'End Session'
+                )}
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to leave?')) {
+                    onLeave();
+                  }
+                }}
+                className="!bg-gray-800 !text-white !border-gray-700 hover:!bg-gray-700"
+              >
+                <ArrowLeft size={16} className="mr-2" />
+                Leave
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -293,8 +614,23 @@ const Classroom: React.FC = () => {
     status: 'loading',
   });
   const [sessionStartTime] = useState(() => new Date());
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [conversationId, setConversationId] = useState<number | null>(null);
+
+  // Use the reusable conversation hook for real-time messaging
+  const {
+    messages,
+    isLoadingMessages,
+    conversation,
+    setConversation,
+    sendMessage,
+    isConnected: isChatConnected,
+    isParticipantOnline,
+  } = useConversation(conversationId, {
+    onNewMessage: (message) => {
+      // Play notification sound or show indicator for new messages
+      // This callback is optional but useful for notifications
+    },
+  });
 
   // Validate session ID
   const numericSessionId = sessionId ? parseInt(sessionId, 10) : null;
@@ -307,11 +643,27 @@ const Classroom: React.FC = () => {
       }
       return classroomAPI.joinClassroom(numericSessionId);
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       setClassroomState({
         status: 'active',
         roomData: data,
       });
+
+      // Load conversation for the session chat
+      try {
+        // Get conversations and find one related to this session
+        const conversations = await messagingAPI.getConversations();
+
+        if (conversations.length > 0) {
+          // Use the most recent conversation
+          // TODO: Backend should link sessions to conversations directly
+          const recentConversation = conversations[0];
+          setConversation(recentConversation);
+          setConversationId(recentConversation.id);
+        }
+      } catch (error) {
+        console.error('Failed to load conversation:', error);
+      }
     },
     onError: (error: Error) => {
       setClassroomState({
@@ -346,35 +698,6 @@ const Classroom: React.FC = () => {
     }
   }, [numericSessionId]);
 
-  // Handle fullscreen toggle
-  const toggleFullscreen = useCallback(() => {
-    if (!containerRef.current) return;
-
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().then(() => {
-        setIsFullscreen(true);
-      }).catch((err) => {
-        console.error('Fullscreen error:', err);
-      });
-    } else {
-      document.exitFullscreen().then(() => {
-        setIsFullscreen(false);
-      });
-    }
-  }, []);
-
-  // Handle fullscreen change events
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    };
-  }, []);
-
   // Handle navigation
   const handleBack = useCallback(() => {
     const isInstructor = user?.role === 'instructor';
@@ -387,16 +710,18 @@ const Classroom: React.FC = () => {
   }, [joinMutation]);
 
   const handleEndSession = useCallback(() => {
-    if (window.confirm('Are you sure you want to end this session? This action cannot be undone.')) {
-      endMutation.mutate();
-    }
+    endMutation.mutate();
   }, [endMutation]);
 
   const handleLeave = useCallback(() => {
-    if (window.confirm('Are you sure you want to leave the classroom?')) {
-      handleBack();
-    }
+    handleBack();
   }, [handleBack]);
+
+  // Handle sending messages - delegates to the useConversation hook
+  // The hook handles optimistic updates, WebSocket, and REST fallback
+  const handleSendMessage = useCallback((content: string, replyToId?: number) => {
+    sendMessage(content, replyToId);
+  }, [sendMessage]);
 
   // Invalid session ID
   if (!numericSessionId) {
@@ -441,72 +766,39 @@ const Classroom: React.FC = () => {
 
   const isInstructor = roomData.participant_role === 'instructor';
 
-  return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 bg-gray-900 flex flex-col"
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-800/80 backdrop-blur-sm border-b border-gray-700/50">
-        <div className="flex items-center gap-4">
-          <Link
-            to={isInstructor ? '/instructor/home' : '/dashboard'}
-            className="p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
-          >
-            <ArrowLeft size={20} className="text-gray-400" />
-          </Link>
-          <div>
-            <h1 className="text-lg font-semibold text-white">Tutoring Session</h1>
-            <p className="text-sm text-gray-400">
-              Room: {roomData.room_name}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Live indicator */}
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-red-600/20 rounded-lg">
-            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-            <span className="text-sm font-medium text-red-400">LIVE</span>
-          </div>
-
-          {/* Fullscreen toggle */}
-          <button
-            onClick={toggleFullscreen}
-            className="p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
-            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-          >
-            {isFullscreen ? (
-              <Minimize2 size={20} className="text-gray-400" />
-            ) : (
-              <Maximize2 size={20} className="text-gray-400" />
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* Video container */}
-      <div className="flex-1 relative p-4">
-        <VideoContainer
-          roomUrl={roomData.room_url}
-          onLoad={() => console.log('Video loaded')}
-          onError={() => {
-            toast.error('Failed to load video. Please try refreshing.');
-          }}
-        />
-
-        {/* Control bar overlay */}
-        <ControlBar
+  // Use 100ms for hundredms provider, iframe for daily
+  if (roomData.provider === 'hundredms') {
+    return (
+      <HMSProvider>
+        <HMSClassroomContent
+          roomData={roomData}
+          sessionId={numericSessionId}
           isInstructor={isInstructor}
           sessionStartTime={sessionStartTime}
-          participantName={roomData.participant_name}
-          participantRole={roomData.participant_role}
           onEndSession={handleEndSession}
           onLeave={handleLeave}
           isEnding={endMutation.isPending}
+          conversation={conversation}
+          messages={messages}
+          isLoadingMessages={isLoadingMessages}
+          onSendMessage={handleSendMessage}
+          isChatConnected={isChatConnected}
+          isParticipantOnline={isParticipantOnline}
         />
-      </div>
-    </div>
+      </HMSProvider>
+    );
+  }
+
+  // Fallback to Daily.co iframe approach
+  return (
+    <DailyClassroomContent
+      roomData={roomData}
+      isInstructor={isInstructor}
+      sessionStartTime={sessionStartTime}
+      onEndSession={handleEndSession}
+      onLeave={handleLeave}
+      isEnding={endMutation.isPending}
+    />
   );
 };
 

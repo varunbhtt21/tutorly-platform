@@ -25,9 +25,10 @@ class ClassroomSession:
         session_id: Reference to the tutoring session (from booking)
         instructor_id: The instructor's user ID
         student_id: The student's user ID
-        room_name: Provider-specific room identifier
+        room_id: Provider-specific room ID (e.g., 100ms room ID for SDK)
+        room_name: Provider-specific room name/identifier
         room_url: Base URL to join the room
-        provider: Name of the video provider (e.g., "daily")
+        provider: Name of the video provider (e.g., "hundredms", "daily")
         status: Current room status
         created_at: When the room was created
         expires_at: When the room will expire
@@ -41,6 +42,7 @@ class ClassroomSession:
     room_name: str
     room_url: str
     provider: str
+    room_id: Optional[str] = None  # Provider-specific ID (required for 100ms SDK)
     status: RoomStatus = RoomStatus.CREATED
     id: Optional[int] = None
     created_at: datetime = field(default_factory=datetime.utcnow)

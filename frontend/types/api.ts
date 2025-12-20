@@ -261,6 +261,8 @@ export interface OnboardingStep7Response {
 export interface InstructorProfile {
   id: number;
   user_id: number;
+  first_name?: string;
+  last_name?: string;
   status: InstructorStatus;
   country_of_birth?: string;
   languages: LanguageResponse[];
@@ -350,6 +352,7 @@ export interface UpcomingSession {
   session_type: string;
   status: string;
   is_trial: boolean;
+  is_in_progress: boolean;  // True if session has started but not ended
   amount: number;
   currency: string;
 }

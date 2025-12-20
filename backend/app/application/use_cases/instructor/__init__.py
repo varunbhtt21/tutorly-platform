@@ -9,6 +9,10 @@ from .verify_instructor import VerifyInstructorUseCase
 from .add_education import AddEducationUseCase
 from .add_experience import AddExperienceUseCase
 from .get_instructor_dashboard import GetInstructorDashboardUseCase
+from .get_instructor_public_profile import (
+    GetInstructorPublicProfileUseCase,
+    InstructorPublicProfileDTO,
+)
 
 __all__ = [
     "CreateInstructorProfileUseCase",
@@ -20,4 +24,6 @@ __all__ = [
     "AddEducationUseCase",
     "AddExperienceUseCase",
     "GetInstructorDashboardUseCase",
+    "GetInstructorPublicProfileUseCase",
+    "InstructorPublicProfileDTO",
 ]

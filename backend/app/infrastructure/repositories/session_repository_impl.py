@@ -132,12 +132,19 @@ class SessionRepositoryImpl(ISessionRepository):
         instructor_id: int,
         limit: int = 10
     ) -> List[Session]:
-        """Get upcoming sessions for an instructor."""
+        """Get upcoming and in-progress sessions for an instructor.
+
+        Shows sessions that:
+        - Haven't ended yet (end_at > now)
+        - Are confirmed or pending confirmation
+
+        This includes both upcoming sessions AND sessions currently in progress.
+        """
         now = datetime.utcnow()
 
         db_models = self.db.query(SessionModel).filter(
             SessionModel.instructor_id == instructor_id,
-            SessionModel.start_at > now,
+            SessionModel.end_at > now,  # Show until session ends
             SessionModel.status.in_([
                 SessionStatus.PENDING_CONFIRMATION.value,
                 SessionStatus.CONFIRMED.value
@@ -151,12 +158,19 @@ class SessionRepositoryImpl(ISessionRepository):
         student_id: int,
         limit: int = 10
     ) -> List[Session]:
-        """Get upcoming sessions for a student."""
+        """Get upcoming and in-progress sessions for a student.
+
+        Shows sessions that:
+        - Haven't ended yet (end_at > now)
+        - Are confirmed or pending confirmation
+
+        This includes both upcoming sessions AND sessions currently in progress.
+        """
         now = datetime.utcnow()
 
         db_models = self.db.query(SessionModel).filter(
             SessionModel.student_id == student_id,
-            SessionModel.start_at > now,
+            SessionModel.end_at > now,  # Show until session ends
             SessionModel.status.in_([
                 SessionStatus.PENDING_CONFIRMATION.value,
                 SessionStatus.CONFIRMED.value

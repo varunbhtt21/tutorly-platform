@@ -25,6 +25,7 @@ class ClassroomRepositoryImpl(IClassroomRepository):
             session_id=model.session_id,
             instructor_id=model.instructor_id,
             student_id=model.student_id,
+            room_id=model.room_id,
             room_name=model.room_name,
             room_url=model.room_url,
             provider=model.provider,
@@ -41,6 +42,7 @@ class ClassroomRepositoryImpl(IClassroomRepository):
             session_id=entity.session_id,
             instructor_id=entity.instructor_id,
             student_id=entity.student_id,
+            room_id=entity.room_id,
             room_name=entity.room_name,
             room_url=entity.room_url,
             provider=entity.provider,
@@ -63,6 +65,9 @@ class ClassroomRepositoryImpl(IClassroomRepository):
             ).first()
             if model:
                 model.status = classroom.status.value
+                model.room_id = classroom.room_id
+                model.room_name = classroom.room_name
+                model.room_url = classroom.room_url
                 model.started_at = classroom.started_at
                 model.ended_at = classroom.ended_at
                 model.expires_at = classroom.expires_at

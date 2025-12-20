@@ -21,12 +21,14 @@ from app.core.dependencies import (
     get_session_repository,
     get_payment_repository,
     get_instructor_repository,
+    get_student_repository,
     get_user_repository,
 )
 from app.domains.user.entities import User
 from app.domains.scheduling.repositories import ISessionRepository
 from app.domains.payment.repositories import IPaymentRepository
 from app.domains.instructor.repositories import IInstructorProfileRepository
+from app.domains.student.repositories import IStudentProfileRepository
 from app.domains.user.repositories import IUserRepository
 from app.application.use_cases.student_dashboard import (
     GetStudentDashboardUseCase,
@@ -52,6 +54,7 @@ class UpcomingSessionResponse(BaseModel):
     duration_minutes: int
     session_type: str
     status: str
+    is_in_progress: bool = False  # True if session has started but not ended
     meeting_link: Optional[str] = None
     timezone: str
     can_join: bool
@@ -159,6 +162,7 @@ async def get_student_dashboard(
     session_repo: ISessionRepository = Depends(get_session_repository),
     payment_repo: IPaymentRepository = Depends(get_payment_repository),
     instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+    student_repo: IStudentProfileRepository = Depends(get_student_repository),
     user_repo: IUserRepository = Depends(get_user_repository),
 ):
     """
@@ -183,12 +187,15 @@ async def get_student_dashboard(
         session_repo=session_repo,
         payment_repo=payment_repo,
         instructor_repo=instructor_repo,
+        student_repo=student_repo,
         user_repo=user_repo,
     )
 
-    result = use_case.execute(student_id=current_user.id)
+    result = use_case.execute(user_id=current_user.id)
 
     # Convert to response models
+    from app.utils.datetime_utils import is_in_progress
+
     return StudentDashboardResponse(
         upcoming_sessions=[
             UpcomingSessionResponse(
@@ -202,6 +209,7 @@ async def get_student_dashboard(
                 duration_minutes=s.duration_minutes,
                 session_type=s.session_type,
                 status=s.status,
+                is_in_progress=is_in_progress(s.start_at, s.end_at),
                 meeting_link=s.meeting_link,
                 timezone=s.timezone,
                 can_join=s.can_join,
@@ -291,6 +299,7 @@ async def get_upcoming_sessions(
     current_user: User = Depends(get_current_user),
     session_repo: ISessionRepository = Depends(get_session_repository),
     instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+    student_repo: IStudentProfileRepository = Depends(get_student_repository),
     user_repo: IUserRepository = Depends(get_user_repository),
     payment_repo: IPaymentRepository = Depends(get_payment_repository),
 ):
@@ -305,10 +314,13 @@ async def get_upcoming_sessions(
         session_repo=session_repo,
         payment_repo=payment_repo,
         instructor_repo=instructor_repo,
+        student_repo=student_repo,
         user_repo=user_repo,
     )
 
-    result = use_case.execute(student_id=current_user.id)
+    result = use_case.execute(user_id=current_user.id)
+
+    from app.utils.datetime_utils import is_in_progress
 
     return [
         UpcomingSessionResponse(
@@ -322,6 +334,7 @@ async def get_upcoming_sessions(
             duration_minutes=s.duration_minutes,
             session_type=s.session_type,
             status=s.status,
+            is_in_progress=is_in_progress(s.start_at, s.end_at),
             meeting_link=s.meeting_link,
             timezone=s.timezone,
             can_join=s.can_join,
@@ -340,6 +353,7 @@ async def get_student_stats(
     session_repo: ISessionRepository = Depends(get_session_repository),
     payment_repo: IPaymentRepository = Depends(get_payment_repository),
     instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+    student_repo: IStudentProfileRepository = Depends(get_student_repository),
     user_repo: IUserRepository = Depends(get_user_repository),
 ):
     """Get only student statistics."""
@@ -353,10 +367,11 @@ async def get_student_stats(
         session_repo=session_repo,
         payment_repo=payment_repo,
         instructor_repo=instructor_repo,
+        student_repo=student_repo,
         user_repo=user_repo,
     )
 
-    result = use_case.execute(student_id=current_user.id)
+    result = use_case.execute(user_id=current_user.id)
 
     return StudentStatsResponse(
         total_sessions_completed=result.stats.total_sessions_completed,
@@ -376,6 +391,7 @@ async def get_my_instructors(
     session_repo: ISessionRepository = Depends(get_session_repository),
     payment_repo: IPaymentRepository = Depends(get_payment_repository),
     instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+    student_repo: IStudentProfileRepository = Depends(get_student_repository),
     user_repo: IUserRepository = Depends(get_user_repository),
 ):
     """Get instructors the student has booked with."""
@@ -389,10 +405,11 @@ async def get_my_instructors(
         session_repo=session_repo,
         payment_repo=payment_repo,
         instructor_repo=instructor_repo,
+        student_repo=student_repo,
         user_repo=user_repo,
     )
 
-    result = use_case.execute(student_id=current_user.id)
+    result = use_case.execute(user_id=current_user.id)
 
     return [
         MyInstructorResponse(
@@ -420,6 +437,7 @@ async def get_session_history(
     session_repo: ISessionRepository = Depends(get_session_repository),
     payment_repo: IPaymentRepository = Depends(get_payment_repository),
     instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+    student_repo: IStudentProfileRepository = Depends(get_student_repository),
     user_repo: IUserRepository = Depends(get_user_repository),
 ):
     """Get session history for the student."""
@@ -433,10 +451,11 @@ async def get_session_history(
         session_repo=session_repo,
         payment_repo=payment_repo,
         instructor_repo=instructor_repo,
+        student_repo=student_repo,
         user_repo=user_repo,
     )
 
-    result = use_case.execute(student_id=current_user.id)
+    result = use_case.execute(user_id=current_user.id)
 
     return [
         SessionHistoryResponse(
@@ -468,6 +487,7 @@ async def get_payment_history(
     session_repo: ISessionRepository = Depends(get_session_repository),
     payment_repo: IPaymentRepository = Depends(get_payment_repository),
     instructor_repo: IInstructorProfileRepository = Depends(get_instructor_repository),
+    student_repo: IStudentProfileRepository = Depends(get_student_repository),
     user_repo: IUserRepository = Depends(get_user_repository),
 ):
     """Get payment history for the student."""
@@ -481,10 +501,11 @@ async def get_payment_history(
         session_repo=session_repo,
         payment_repo=payment_repo,
         instructor_repo=instructor_repo,
+        student_repo=student_repo,
         user_repo=user_repo,
     )
 
-    result = use_case.execute(student_id=current_user.id)
+    result = use_case.execute(user_id=current_user.id)
 
     return [
         PaymentHistoryResponse(

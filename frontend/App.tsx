@@ -51,23 +51,38 @@ const ProtectedRoute = ({ children, roles }: ProtectedRouteProps) => {
 const AppContent = () => {
   return (
     <Routes>
+      {/*
+        Fullscreen routes - rendered WITHOUT Layout wrapper.
+        These are immersive experiences that need the entire viewport.
+        Following React Router's nested layout pattern for layout composition.
+      */}
+      <Route
+        path="/classroom/:sessionId"
+        element={
+          <ProtectedRoute>
+            <Classroom />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Standard routes - rendered WITH Layout (nav + content + footer) */}
       <Route element={<Layout />}>
         <Route path="/" element={<Home />} />
         <Route path="/instructors" element={<InstructorSearch />} />
         <Route path="/instructors/:id" element={<InstructorProfile />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        
+
         {/* Protected Routes */}
-        <Route 
-          path="/dashboard" 
+        <Route
+          path="/dashboard"
           element={
             <ProtectedRoute>
               <Dashboard />
             </ProtectedRoute>
-          } 
+          }
         />
-        
+
         <Route
           path="/dashboard/instructor/onboarding"
           element={
@@ -109,15 +124,6 @@ const AppContent = () => {
           element={
             <ProtectedRoute roles={['admin']}>
               <AdminDashboard />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/classroom/:sessionId"
-          element={
-            <ProtectedRoute>
-              <Classroom />
             </ProtectedRoute>
           }
         />
